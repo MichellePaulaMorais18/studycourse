@@ -1,6 +1,6 @@
 # 📚 StudyCourse
 
-App para organizar estudos de concurso: contagem regressiva para a prova, etapas do concurso, matérias e tópicos do edital, e registro de horas de estudo (com cronômetro). Dados salvos no Firebase (Firestore) com login Google.
+App para organizar estudos de concurso: contagem regressiva para a prova, etapas do concurso, matérias e tópicos do edital, e registro de horas de estudo (com cronômetro). Dados salvos no Firebase (Realtime Database) com login Google.
 
 ## ⚙️ Configuração do Firebase (só na primeira vez)
 
@@ -16,21 +16,24 @@ O projeto Firebase **studycourse** já existe. Falta registrar o app web e colar
 1. No console: **Criação** (Build) → **Authentication** → **Vamos começar**
 2. Aba **Sign-in method** → **Google** → **Ativar** → Salvar
 
-### Ativar o banco de dados (Firestore)
-1. No console: **Criação** (Build) → **Firestore Database** → **Criar banco de dados**
-2. Escolha o modo **produção** e a região `southamerica-east1` (São Paulo)
-3. Na aba **Regras**, cole e publique:
+### Configurar o banco de dados (Realtime Database)
+1. No console: **Criação** (Build) → **Realtime Database** (já criado ✅)
+2. Na aba **Regras**, cole e publique:
 
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+```json
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
     }
   }
 }
 ```
+
+> ⚠️ Importante: a configuração no `app.js` precisa ter a linha `databaseURL` (aparece na aba **Dados** do Realtime Database, algo como `https://studycourse-xxxx-default-rtdb.firebaseio.com`).
 
 ## ▶️ Como usar
 

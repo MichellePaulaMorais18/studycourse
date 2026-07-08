@@ -6,6 +6,7 @@
 const FIREBASE_CONFIG = {
   apiKey: "COLE_AQUI",
   authDomain: "COLE_AQUI.firebaseapp.com",
+  databaseURL: "COLE_AQUI",
   projectId: "COLE_AQUI",
   storageBucket: "COLE_AQUI.firebasestorage.app",
   messagingSenderId: "COLE_AQUI",
@@ -17,10 +18,10 @@ let auth = null, db = null;
 if (configOk) {
   firebase.initializeApp(FIREBASE_CONFIG);
   auth = firebase.auth();
-  db   = firebase.firestore();
+  db   = firebase.database();
 }
 
-// Cache em memória — Firestore é a fonte de verdade
+// Cache em memória — Realtime Database é a fonte de verdade
 let cache = {
   concursos: [],   // [{id, nome, orgao, cargo, banca, dataProva, editalLink, etapas:[], materias:[]}]
   sessoes:   [],   // [{id, concursoId, materiaId, data, minutos, obs}]
@@ -28,20 +29,37 @@ let cache = {
 };
 let currentUid = null;
 
-function userRef() { return db.collection('users').doc(currentUid).collection('app'); }
+function userRef() { return db.ref('users/' + currentUid + '/app'); }
 
-async function loadFromFirestore() {
+// O Realtime Database não guarda arrays vazios e pode devolver objetos
+// no lugar de arrays — garante a estrutura esperada pelo app.
+function toArr(v) { return Array.isArray(v) ? v : Object.values(v || {}); }
+
+function normalizeCache() {
+  cache.concursos = toArr(cache.concursos);
+  cache.sessoes   = toArr(cache.sessoes);
+  cache.settings  = cache.settings || { activeId: null, dark: false };
+  cache.concursos.forEach(c => {
+    c.etapas   = toArr(c.etapas);
+    c.materias = toArr(c.materias);
+    c.materias.forEach(m => { m.topicos = toArr(m.topicos); });
+  });
+}
+
+async function loadFromDatabase() {
   try {
-    const snap = await userRef().get();
-    snap.forEach(doc => {
-      if (cache[doc.id] !== undefined) cache[doc.id] = doc.data().value;
+    const snap = await userRef().once('value');
+    const data = snap.val() || {};
+    Object.keys(cache).forEach(k => {
+      if (data[k] !== undefined) cache[k] = data[k];
     });
-  } catch (e) { console.warn('Firestore load error', e); }
+    normalizeCache();
+  } catch (e) { console.warn('Database load error', e); }
 }
 
 function save(key) {
   if (!currentUid) return;
-  userRef().doc(key).set({ value: cache[key] }).catch(e => console.warn('Save error', e));
+  userRef().child(key).set(cache[key]).catch(e => console.warn('Save error', e));
 }
 
 function signInGoogle() {
@@ -66,7 +84,7 @@ function initApp() {
       currentUid = user.uid;
       document.getElementById('login-screen').classList.remove('show');
       document.getElementById('app-loading').classList.add('show');
-      await loadFromFirestore();
+      await loadFromDatabase();
       document.getElementById('app-loading').classList.remove('show');
       const info = document.getElementById('user-info');
       info.style.display = 'flex';
