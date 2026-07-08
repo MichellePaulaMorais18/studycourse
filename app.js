@@ -1,16 +1,14 @@
 /* ══════════════════════════════════
    FIREBASE — INIT + AUTH + DATA
 ══════════════════════════════════ */
-// ⚠️ COLE AQUI a configuração do seu projeto Firebase "studycourse":
-// Console Firebase → Adicionar app → Web (</>) → copiar firebaseConfig
 const FIREBASE_CONFIG = {
-  apiKey: "COLE_AQUI",
-  authDomain: "COLE_AQUI.firebaseapp.com",
-  databaseURL: "COLE_AQUI",
-  projectId: "COLE_AQUI",
-  storageBucket: "COLE_AQUI.firebasestorage.app",
-  messagingSenderId: "COLE_AQUI",
-  appId: "COLE_AQUI"
+  apiKey: "AIzaSyA-m0oHSbXNfwDIIsUrpX8ywRa_VTTi4Ww",
+  authDomain: "studycourse-6174c.firebaseapp.com",
+  databaseURL: "https://studycourse-6174c-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "studycourse-6174c",
+  storageBucket: "studycourse-6174c.firebasestorage.app",
+  messagingSenderId: "93654145934",
+  appId: "1:93654145934:web:8462cc28eb107b70e422df"
 };
 
 const configOk = !FIREBASE_CONFIG.apiKey.includes("COLE_AQUI");
