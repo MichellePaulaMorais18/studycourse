@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StudyCourse — Estudos para Concurso</title>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- Login screen -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="app-icon">📚</div>
+    <h1>StudyCourse</h1>
+    <p>Organize seus estudos para concurso: matérias do edital, etapas, contagem regressiva para a prova e registro de horas estudadas.</p>
+    <div id="setup-notice" style="display:none">
+      ⚠️ Falta configurar o Firebase: abra o <b>app.js</b> e cole a configuração do seu projeto (veja o README).
+    </div>
+    <button class="btn-google" onclick="signInGoogle()">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+      </svg>
+      Entrar com Google
+    </button>
+    <div class="login-footer">Seus dados ficam salvos na sua conta Google com segurança.</div>
+  </div>
+</div>
+
+<!-- Loading overlay -->
+<div id="app-loading">
+  <div class="spinner"></div>
+  <span>Carregando seus dados...</span>
+</div>
+
+<header>
+  <div class="header-left">
+    <button class="btn-hamburger" onclick="openDrawer()" aria-label="Menu">☰</button>
+    <h1>📚</h1>
+  </div>
+  <div class="header-right">
+    <div class="period-tabs">
+      <button id="tab-dashboard" class="active" onclick="setView('dashboard')">Resumo</button>
+      <button id="tab-etapas" onclick="setView('etapas')">Etapas</button>
+      <button id="tab-materias" onclick="setView('materias')">Matérias</button>
+      <button id="tab-estudos" onclick="setView('estudos')">Estudos</button>
+    </div>
+    <div class="user-info" id="user-info" style="display:none">
+      <img class="user-avatar" id="user-avatar" src="" alt="" />
+    </div>
+  </div>
+</header>
+
+<!-- Drawer -->
+<div id="drawer-overlay" onclick="closeDrawer()"></div>
+<aside id="side-drawer">
+  <div class="drawer-header">
+    <span>📚 StudyCourse</span>
+    <button onclick="closeDrawer()">✕</button>
+  </div>
+  <nav class="drawer-nav">
+    <button onclick="setView('dashboard');closeDrawer()">🏠 Resumo</button>
+    <button onclick="setView('etapas');closeDrawer()">🗓️ Etapas do concurso</button>
+    <button onclick="setView('materias');closeDrawer()">📖 Matérias do edital</button>
+    <button onclick="setView('estudos');closeDrawer()">⏱️ Sessões de estudo</button>
+    <button onclick="setView('concursos');closeDrawer()">🏛️ Meus concursos</button>
+    <hr />
+    <button onclick="toggleDark()">🌙 Tema claro/escuro</button>
+    <button onclick="signOutApp()">🚪 Sair</button>
+  </nav>
+</aside>
+
+<main>
+
+  <!-- Seletor de concurso ativo -->
+  <div id="concurso-bar">
+    <label for="concurso-select">Concurso:</label>
+    <select id="concurso-select" onchange="setActiveConcurso(this.value)"></select>
+    <button class="btn-small" onclick="openConcursoModal()">+ Novo</button>
+  </div>
+
+  <!-- ═══ RESUMO ═══ -->
+  <section id="view-dashboard">
+    <div id="dash-empty" class="empty-state" style="display:none">
+      <div class="empty-icon">🏛️</div>
+      <p>Cadastre seu primeiro concurso para começar.</p>
+      <button class="btn-primary" onclick="openConcursoModal()">+ Adicionar concurso</button>
+    </div>
+    <div id="dash-content">
+      <div class="card countdown-card">
+        <div class="countdown-label" id="countdown-label">Faltam</div>
+        <div class="countdown-days" id="countdown-days">—</div>
+        <div class="countdown-sub" id="countdown-sub"></div>
+      </div>
+      <div class="stat-grid">
+        <div class="card stat-card">
+          <div class="stat-value" id="stat-etapa">—</div>
+          <div class="stat-label">Etapa atual</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="stat-progresso">0%</div>
+          <div class="stat-label">Edital estudado</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="stat-horas-semana">0h</div>
+          <div class="stat-label">Últimos 7 dias</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="stat-horas-total">0h</div>
+          <div class="stat-label">Total estudado</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>📖 Progresso por matéria</h2>
+        <div id="dash-materias"></div>
+      </div>
+      <div class="card">
+        <h2>🗓️ Próximas etapas</h2>
+        <div id="dash-etapas"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ ETAPAS ═══ -->
+  <section id="view-etapas" style="display:none">
+    <div class="section-header">
+      <h2>Etapas do concurso</h2>
+      <div>
+        <button class="btn-small" id="btn-etapas-padrao" onclick="addDefaultEtapas()">Usar etapas padrão</button>
+        <button class="btn-primary" onclick="openEtapaModal()">+ Etapa</button>
+      </div>
+    </div>
+    <div id="etapas-list" class="timeline"></div>
+  </section>
+
+  <!-- ═══ MATÉRIAS ═══ -->
+  <section id="view-materias" style="display:none">
+    <div class="section-header">
+      <h2>Matérias do edital</h2>
+      <button class="btn-primary" onclick="openMateriaModal()">+ Matéria</button>
+    </div>
+    <p class="hint">Clique em um tópico para alternar: ⬜ não estudado → ✅ estudado → 🔁 revisado.</p>
+    <div id="materias-list"></div>
+  </section>
+
+  <!-- ═══ ESTUDOS ═══ -->
+  <section id="view-estudos" style="display:none">
+    <div class="card timer-card">
+      <h2>⏱️ Cronômetro de estudo</h2>
+      <select id="timer-materia"></select>
+      <div class="timer-display" id="timer-display">00:00:00</div>
+      <div class="timer-buttons">
+        <button class="btn-primary" id="timer-start" onclick="timerStart()">▶ Iniciar</button>
+        <button class="btn-small" id="timer-pause" onclick="timerPause()" disabled>⏸ Pausar</button>
+        <button class="btn-small btn-danger" id="timer-stop" onclick="timerStop()" disabled>⏹ Encerrar e salvar</button>
+      </div>
+    </div>
+    <div class="section-header">
+      <h2>Sessões de estudo</h2>
+      <button class="btn-primary" onclick="openSessaoModal()">+ Registrar manualmente</button>
+    </div>
+    <div class="card">
+      <div id="sessoes-list"></div>
+    </div>
+  </section>
+
+  <!-- ═══ CONCURSOS ═══ -->
+  <section id="view-concursos" style="display:none">
+    <div class="section-header">
+      <h2>Meus concursos</h2>
+      <button class="btn-primary" onclick="openConcursoModal()">+ Concurso</button>
+    </div>
+    <div id="concursos-list"></div>
+  </section>
+
+</main>
+
+<!-- ═══ MODAL: CONCURSO ═══ -->
+<div class="modal" id="modal-concurso">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-concurso')">✕</button>
+    <h2 id="modal-concurso-title">Novo concurso</h2>
+    <form onsubmit="saveConcurso(event)">
+      <input type="hidden" id="c-id" />
+      <label>Nome do concurso *</label>
+      <input id="c-nome" required placeholder="Ex.: Concurso TRT 4ª Região" />
+      <label>Órgão</label>
+      <input id="c-orgao" placeholder="Ex.: Tribunal Regional do Trabalho" />
+      <label>Cargo</label>
+      <input id="c-cargo" placeholder="Ex.: Técnico Judiciário" />
+      <label>Banca</label>
+      <input id="c-banca" placeholder="Ex.: FCC, Cebraspe, FGV..." />
+      <label>Data da prova</label>
+      <input id="c-data" type="date" />
+      <label>Link do edital</label>
+      <input id="c-edital" type="url" placeholder="https://..." />
+      <button class="btn-primary" type="submit">Salvar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ MODAL: ETAPA ═══ -->
+<div class="modal" id="modal-etapa">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-etapa')">✕</button>
+    <h2 id="modal-etapa-title">Nova etapa</h2>
+    <form onsubmit="saveEtapa(event)">
+      <input type="hidden" id="e-id" />
+      <label>Nome da etapa *</label>
+      <input id="e-nome" required placeholder="Ex.: Prova objetiva" />
+      <label>Data (opcional)</label>
+      <input id="e-data" type="date" />
+      <label>Situação</label>
+      <select id="e-status">
+        <option value="pendente">⬜ Pendente</option>
+        <option value="atual">📍 Etapa atual</option>
+        <option value="concluida">✅ Concluída</option>
+      </select>
+      <button class="btn-primary" type="submit">Salvar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ MODAL: MATÉRIA ═══ -->
+<div class="modal" id="modal-materia">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-materia')">✕</button>
+    <h2 id="modal-materia-title">Nova matéria</h2>
+    <form onsubmit="saveMateria(event)">
+      <input type="hidden" id="m-id" />
+      <label>Nome da matéria *</label>
+      <input id="m-nome" required placeholder="Ex.: Português" />
+      <label>Tópicos do edital (um por linha)</label>
+      <textarea id="m-topicos" rows="8" placeholder="Cole aqui os tópicos do edital, um por linha.&#10;Ex.:&#10;Interpretação de texto&#10;Concordância verbal&#10;Regência nominal"></textarea>
+      <button class="btn-primary" type="submit">Salvar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ MODAL: SESSÃO ═══ -->
+<div class="modal" id="modal-sessao">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-sessao')">✕</button>
+    <h2>Registrar estudo</h2>
+    <form onsubmit="saveSessao(event)">
+      <label>Matéria *</label>
+      <select id="s-materia" required></select>
+      <label>Data *</label>
+      <input id="s-data" type="date" required />
+      <label>Tempo (minutos) *</label>
+      <input id="s-minutos" type="number" min="1" required placeholder="Ex.: 50" />
+      <label>Anotações</label>
+      <input id="s-obs" placeholder="O que você estudou? (opcional)" />
+      <button class="btn-primary" type="submit">Salvar</button>
+    </form>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
