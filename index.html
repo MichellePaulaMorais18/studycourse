@@ -51,6 +51,7 @@
       <button id="tab-materias" onclick="setView('materias')">Matérias</button>
       <button id="tab-estudos" onclick="setView('estudos')">Estudos</button>
       <button id="tab-quiz" onclick="setView('quiz')">Quiz</button>
+      <button id="tab-fontes" onclick="setView('fontes')">Radar</button>
     </div>
     <div class="user-info" id="user-info" style="display:none">
       <img class="user-avatar" id="user-avatar" src="" alt="" />
@@ -71,6 +72,7 @@
     <button onclick="setView('materias');closeDrawer()">📖 Matérias do edital</button>
     <button onclick="setView('estudos');closeDrawer()">⏱️ Sessões de estudo</button>
     <button onclick="setView('quiz');closeDrawer()">🎯 Quiz de questões</button>
+    <button onclick="setView('fontes');closeDrawer()">🔭 Radar de concursos</button>
     <button onclick="setView('concursos');closeDrawer()">🏛️ Meus concursos</button>
     <hr />
     <button onclick="toggleDark()">🌙 Tema claro/escuro</button>
@@ -256,6 +258,16 @@
 
   </section>
 
+  <!-- ═══ RADAR DE CONCURSOS ═══ -->
+  <section id="view-fontes" style="display:none">
+    <div class="section-header">
+      <h2>🔭 Radar de concursos</h2>
+      <button class="btn-primary" onclick="openFonteModal()">+ Lugar</button>
+    </div>
+    <p class="hint">Anote sites, órgãos e bancas onde sempre aparecem concursos. Ao conferir um deles, clique em "Visitei hoje" — a lista mostra primeiro os que estão há mais tempo sem visita.</p>
+    <div id="fontes-list"></div>
+  </section>
+
   <!-- ═══ CONCURSOS ═══ -->
   <section id="view-concursos" style="display:none">
     <div class="section-header">
@@ -282,9 +294,16 @@
       <input id="c-cargo" placeholder="Ex.: Técnico Judiciário" />
       <label>Banca</label>
       <input id="c-banca" placeholder="Ex.: FCC, Cebraspe, FGV..." />
+      <label>Situação</label>
+      <select id="c-status">
+        <option value="previsto">🔭 Previsto (ainda sem edital)</option>
+        <option value="publicado">📢 Edital publicado</option>
+        <option value="andamento">🏃 Em andamento</option>
+        <option value="encerrado">🏁 Encerrado</option>
+      </select>
       <label>Data da prova</label>
       <input id="c-data" type="date" />
-      <label>Link do edital</label>
+      <label>Link do edital ou site de acompanhamento</label>
       <input id="c-edital" type="url" placeholder="https://..." />
       <button class="btn-primary" type="submit">Salvar</button>
     </form>
@@ -343,6 +362,24 @@
       <input id="s-minutos" type="number" min="1" required placeholder="Ex.: 50" />
       <label>Anotações</label>
       <input id="s-obs" placeholder="O que você estudou? (opcional)" />
+      <button class="btn-primary" type="submit">Salvar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ MODAL: FONTE (RADAR) ═══ -->
+<div class="modal" id="modal-fonte">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-fonte')">✕</button>
+    <h2 id="modal-fonte-title">Novo lugar</h2>
+    <form onsubmit="saveFonte(event)">
+      <input type="hidden" id="f-id" />
+      <label>Nome *</label>
+      <input id="f-nome" required placeholder="Ex.: PCI Concursos, site do TCE-GO, Prefeitura de Goiânia..." />
+      <label>Link</label>
+      <input id="f-link" type="url" placeholder="https://..." />
+      <label>Anotações</label>
+      <input id="f-obs" placeholder="Ex.: costuma abrir concurso no fim do ano (opcional)" />
       <button class="btn-primary" type="submit">Salvar</button>
     </form>
   </div>

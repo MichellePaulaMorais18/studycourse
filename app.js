@@ -25,6 +25,7 @@ let cache = {
   sessoes:   [],   // [{id, concursoId, materiaId, data, minutos, obs}]
   questoes:  [],   // [{id, concursoId, materiaId, enunciado, alts:[], correta, acertos, erros, ultimo}]
   simulados: [],   // [{id, concursoId, data, total, acertos}]
+  fontes:    [],   // [{id, nome, link, obs, ultimaVisita}] — radar de concursos
   settings:  { activeId: null, dark: false }
 };
 let currentUid = null;
@@ -40,6 +41,7 @@ function normalizeCache() {
   cache.sessoes   = toArr(cache.sessoes);
   cache.questoes  = toArr(cache.questoes);
   cache.simulados = toArr(cache.simulados);
+  cache.fontes    = toArr(cache.fontes);
   cache.settings  = cache.settings || { activeId: null, dark: false };
   cache.concursos.forEach(c => {
     c.etapas   = toArr(c.etapas);
@@ -146,7 +148,7 @@ function fmtMin(min) {
 /* ══════════════════════════════════
    NAVEGAÇÃO / UI
 ══════════════════════════════════ */
-const VIEWS = ['dashboard', 'etapas', 'materias', 'estudos', 'quiz', 'concursos'];
+const VIEWS = ['dashboard', 'etapas', 'materias', 'estudos', 'quiz', 'fontes', 'concursos'];
 
 function setView(v) {
   VIEWS.forEach(x => {
@@ -187,6 +189,7 @@ function openConcursoModal(id) {
   document.getElementById('c-orgao').value  = c ? (c.orgao || '') : '';
   document.getElementById('c-cargo').value  = c ? (c.cargo || '') : '';
   document.getElementById('c-banca').value  = c ? (c.banca || '') : '';
+  document.getElementById('c-status').value = c ? (c.status || 'publicado') : 'previsto';
   document.getElementById('c-data').value   = c ? (c.dataProva || '') : '';
   document.getElementById('c-edital').value = c ? (c.editalLink || '') : '';
   openModal('modal-concurso');
@@ -200,6 +203,7 @@ function saveConcurso(e) {
     orgao:      document.getElementById('c-orgao').value.trim(),
     cargo:      document.getElementById('c-cargo').value.trim(),
     banca:      document.getElementById('c-banca').value.trim(),
+    status:     document.getElementById('c-status').value,
     dataProva:  document.getElementById('c-data').value,
     editalLink: document.getElementById('c-edital').value.trim()
   };
@@ -465,6 +469,7 @@ function renderAll() {
   renderMaterias();
   renderEstudos();
   renderQuiz();
+  renderFontes();
   renderConcursos();
 }
 
@@ -492,7 +497,11 @@ function renderDashboard() {
   const elDias = document.getElementById('countdown-days');
   const elLabel = document.getElementById('countdown-label');
   const elSub = document.getElementById('countdown-sub');
-  if (dias === null) {
+  if (dias === null && c.status === 'previsto') {
+    elLabel.textContent = c.nome;
+    elDias.textContent = '🔭';
+    elSub.textContent = 'Concurso previsto — fique de olho nas atualizações' + (c.editalLink ? ' (link no cadastro)' : '');
+  } else if (dias === null) {
     elLabel.textContent = c.nome;
     elDias.textContent = '📅';
     elSub.textContent = 'Defina a data da prova no cadastro do concurso';
@@ -671,9 +680,11 @@ function renderConcursos() {
   }
   list.innerHTML = cache.concursos.map(c => {
     const dias = daysUntil(c.dataProva);
+    const st = c.status || 'publicado';
     return `
     <div class="concurso-card ${ativo && c.id === ativo.id ? 'ativo' : ''}">
-      <h3>${esc(c.nome)}${ativo && c.id === ativo.id ? '<span class="badge-ativo">ativo</span>' : ''}</h3>
+      <h3>${esc(c.nome)}${ativo && c.id === ativo.id ? '<span class="badge-ativo">ativo</span>' : ''}
+        <span class="status-badge ${st}">${STATUS_CONCURSO[st] || st}</span></h3>
       <div class="concurso-meta">
         ${c.orgao ? `🏛️ ${esc(c.orgao)}<br>` : ''}
         ${c.cargo ? `💼 ${esc(c.cargo)}<br>` : ''}
@@ -1059,6 +1070,99 @@ function backToQuizHome() {
 function quitQuiz() {
   if (!confirm('Sair do quiz? O progresso desta rodada será perdido.')) return;
   backToQuizHome();
+}
+
+/* ══════════════════════════════════
+   RADAR DE CONCURSOS (FONTES)
+══════════════════════════════════ */
+const STATUS_CONCURSO = {
+  previsto:  '🔭 Previsto',
+  publicado: '📢 Edital publicado',
+  andamento: '🏃 Em andamento',
+  encerrado: '🏁 Encerrado'
+};
+
+function diasDesde(iso) {
+  if (!iso) return null;
+  const [y, m, d] = iso.split('-').map(Number);
+  const ref = new Date(y, m - 1, d);
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return Math.round((now - ref) / 86400000);
+}
+
+function openFonteModal(id) {
+  const f = cache.fontes.find(x => x.id === id);
+  document.getElementById('modal-fonte-title').textContent = f ? 'Editar lugar' : 'Novo lugar';
+  document.getElementById('f-id').value   = f ? f.id : '';
+  document.getElementById('f-nome').value = f ? f.nome : '';
+  document.getElementById('f-link').value = f ? (f.link || '') : '';
+  document.getElementById('f-obs').value  = f ? (f.obs || '') : '';
+  openModal('modal-fonte');
+}
+
+function saveFonte(e) {
+  e.preventDefault();
+  const id = document.getElementById('f-id').value;
+  const dados = {
+    nome: document.getElementById('f-nome').value.trim(),
+    link: document.getElementById('f-link').value.trim(),
+    obs:  document.getElementById('f-obs').value.trim()
+  };
+  if (id) {
+    Object.assign(cache.fontes.find(x => x.id === id), dados);
+  } else {
+    cache.fontes.push({ id: genId(), ultimaVisita: '', ...dados });
+  }
+  save('fontes');
+  closeModal('modal-fonte');
+  renderFontes();
+}
+
+function delFonte(id) {
+  const f = cache.fontes.find(x => x.id === id);
+  if (!confirm(`Excluir "${f.nome}" do radar?`)) return;
+  cache.fontes = cache.fontes.filter(x => x.id !== id);
+  save('fontes');
+  renderFontes();
+}
+
+function marcarVisita(id) {
+  cache.fontes.find(x => x.id === id).ultimaVisita = todayISO();
+  save('fontes');
+  renderFontes();
+}
+
+function renderFontes() {
+  const list = document.getElementById('fontes-list');
+  if (cache.fontes.length === 0) {
+    list.innerHTML = '<p class="hint">Nenhum lugar anotado ainda. Adicione sites de notícias de concursos, órgãos que você acompanha, bancas...</p>';
+    return;
+  }
+  // Mais tempo sem visita primeiro (nunca visitados no topo)
+  const ordenadas = cache.fontes.slice().sort((a, b) => (a.ultimaVisita || '').localeCompare(b.ultimaVisita || ''));
+  list.innerHTML = ordenadas.map(f => {
+    const dias = diasDesde(f.ultimaVisita);
+    let visita, alerta = false;
+    if (dias === null) { visita = 'nunca visitado'; alerta = true; }
+    else if (dias === 0) visita = 'visitado hoje ✅';
+    else if (dias === 1) visita = 'visitado ontem';
+    else { visita = `há ${dias} dias sem visitar`; alerta = dias >= 7; }
+    return `
+    <div class="concurso-card ${alerta ? 'fonte-alerta' : ''}">
+      <h3>${esc(f.nome)}</h3>
+      <div class="concurso-meta">
+        ${f.obs ? `📝 ${esc(f.obs)}<br>` : ''}
+        ${f.link ? `🔗 <a href="${esc(f.link)}" target="_blank" rel="noopener">Abrir site</a><br>` : ''}
+        <span class="${alerta ? 'fonte-visita-alerta' : ''}">👁️ ${visita}</span>
+      </div>
+      <div class="concurso-actions">
+        <button class="btn-small" onclick="marcarVisita('${f.id}')">✔ Visitei hoje</button>
+        <button class="btn-small" onclick="openFonteModal('${f.id}')">✏️ Editar</button>
+        <button class="btn-small btn-danger" onclick="delFonte('${f.id}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 /* ══════════════════════════════════
