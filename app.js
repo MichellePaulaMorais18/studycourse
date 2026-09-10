@@ -149,14 +149,17 @@ function fmtMin(min) {
    NAVEGAÇÃO / UI
 ══════════════════════════════════ */
 const VIEWS = ['dashboard', 'etapas', 'materias', 'estudos', 'quiz', 'fontes', 'concursos'];
+let currentView = 'dashboard';
 
 function setView(v) {
+  currentView = v;
   VIEWS.forEach(x => {
     const sec = document.getElementById('view-' + x);
     if (sec) sec.style.display = (x === v) ? 'block' : 'none';
     const tab = document.getElementById('tab-' + x);
     if (tab) tab.classList.toggle('active', x === v);
   });
+  renderConcursoSelect(); // o Radar é geral — a barra de concurso some nele
 }
 
 function openDrawer()  { document.getElementById('side-drawer').classList.add('open'); document.getElementById('drawer-overlay').classList.add('show'); }
@@ -476,7 +479,7 @@ function renderAll() {
 function renderConcursoSelect() {
   const bar = document.getElementById('concurso-bar');
   const sel = document.getElementById('concurso-select');
-  if (cache.concursos.length === 0) { bar.style.display = 'none'; return; }
+  if (cache.concursos.length === 0 || currentView === 'fontes') { bar.style.display = 'none'; return; }
   bar.style.display = 'flex';
   const ativo = getActive();
   sel.innerHTML = cache.concursos.map(c =>
