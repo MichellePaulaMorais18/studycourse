@@ -23,6 +23,8 @@ if (configOk) {
 let cache = {
   concursos: [],   // [{id, nome, orgao, cargo, banca, dataProva, editalLink, etapas:[], materias:[]}]
   sessoes:   [],   // [{id, concursoId, materiaId, data, minutos, obs}]
+  questoes:  [],   // [{id, concursoId, materiaId, enunciado, alts:[], correta, acertos, erros, ultimo}]
+  simulados: [],   // [{id, concursoId, data, total, acertos}]
   settings:  { activeId: null, dark: false }
 };
 let currentUid = null;
@@ -36,12 +38,15 @@ function toArr(v) { return Array.isArray(v) ? v : Object.values(v || {}); }
 function normalizeCache() {
   cache.concursos = toArr(cache.concursos);
   cache.sessoes   = toArr(cache.sessoes);
+  cache.questoes  = toArr(cache.questoes);
+  cache.simulados = toArr(cache.simulados);
   cache.settings  = cache.settings || { activeId: null, dark: false };
   cache.concursos.forEach(c => {
     c.etapas   = toArr(c.etapas);
     c.materias = toArr(c.materias);
     c.materias.forEach(m => { m.topicos = toArr(m.topicos); });
   });
+  cache.questoes.forEach(q => { q.alts = toArr(q.alts); });
 }
 
 async function loadFromDatabase() {
@@ -141,7 +146,7 @@ function fmtMin(min) {
 /* ══════════════════════════════════
    NAVEGAÇÃO / UI
 ══════════════════════════════════ */
-const VIEWS = ['dashboard', 'etapas', 'materias', 'estudos', 'concursos'];
+const VIEWS = ['dashboard', 'etapas', 'materias', 'estudos', 'quiz', 'concursos'];
 
 function setView(v) {
   VIEWS.forEach(x => {
@@ -216,12 +221,14 @@ function delConcurso(id) {
   const c = cache.concursos.find(x => x.id === id);
   if (!confirm(`Excluir o concurso "${c.nome}" e todos os dados dele?`)) return;
   cache.concursos = cache.concursos.filter(x => x.id !== id);
-  cache.sessoes = cache.sessoes.filter(s => s.concursoId !== id);
+  cache.sessoes   = cache.sessoes.filter(s => s.concursoId !== id);
+  cache.questoes  = cache.questoes.filter(q => q.concursoId !== id);
+  cache.simulados = cache.simulados.filter(s => s.concursoId !== id);
   if (cache.settings.activeId === id) {
     cache.settings.activeId = cache.concursos[0] ? cache.concursos[0].id : null;
     save('settings');
   }
-  save('concursos'); save('sessoes');
+  save('concursos'); save('sessoes'); save('questoes'); save('simulados');
   renderAll();
 }
 
@@ -457,6 +464,7 @@ function renderAll() {
   renderEtapas();
   renderMaterias();
   renderEstudos();
+  renderQuiz();
   renderConcursos();
 }
 
@@ -680,6 +688,377 @@ function renderConcursos() {
       </div>
     </div>`;
   }).join('');
+}
+
+/* ══════════════════════════════════
+   QUIZ — BANCO DE QUESTÕES
+══════════════════════════════════ */
+let quiz = null; // sessão em andamento (não persiste)
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function findOrCreateMateria(nome) {
+  const c = getActive();
+  let m = c.materias.find(x => x.nome.toLowerCase() === nome.toLowerCase());
+  if (!m) {
+    m = { id: genId(), nome, topicos: [], aberta: false };
+    c.materias.push(m);
+    save('concursos');
+  }
+  return m.id;
+}
+
+// Formato: [Matéria] muda a matéria; alternativas "A) ..." a "E) ..."; "GABARITO: X" fecha a questão.
+function parseQuestoes(texto, materiaPadraoId) {
+  const c = getActive();
+  const LETRAS = 'ABCDE';
+  const altRe = /^\(?([A-Ea-e])[\)\.\:]\s*(.+)$/;
+  const gabRe = /^GABARITO\s*[:\-–]?\s*\(?([A-Ea-e])\)?/i;
+  const matRe = /^\[(.+)\]\s*$/;
+  const questoes = [];
+  let problemas = 0;
+  let materiaId = materiaPadraoId;
+  let enun = [], alts = [];
+
+  const descarta = () => { if (enun.length || alts.length) problemas++; enun = []; alts = []; };
+
+  for (const raw of texto.split('\n')) {
+    const l = raw.trim();
+    if (!l) continue;
+
+    const mMat = l.match(matRe);
+    if (mMat) {
+      descarta();
+      materiaId = findOrCreateMateria(mMat[1].trim());
+      continue;
+    }
+
+    const mGab = l.match(gabRe);
+    if (mGab) {
+      const idx = LETRAS.indexOf(mGab[1].toUpperCase());
+      if (enun.length && alts.length >= 2 && idx > -1 && idx < alts.length) {
+        questoes.push({
+          id: genId(),
+          concursoId: c.id,
+          materiaId: materiaId || findOrCreateMateria('Geral'),
+          enunciado: enun.join('\n'),
+          alts: alts.slice(),
+          correta: idx,
+          acertos: 0, erros: 0, ultimo: ''
+        });
+      } else problemas++;
+      enun = []; alts = [];
+      continue;
+    }
+
+    // Só aceita como alternativa se a letra for a próxima esperada (A, B, C...);
+    // assim listas "a)" dentro do enunciado não confundem o parser.
+    const mAlt = l.match(altRe);
+    if (mAlt && mAlt[1].toUpperCase() === LETRAS[alts.length] && enun.length) {
+      alts.push(mAlt[2].trim());
+      continue;
+    }
+
+    if (alts.length > 0) alts[alts.length - 1] += ' ' + l;  // continuação da alternativa
+    else enun.push(l);
+  }
+  descarta();
+  return { questoes, problemas };
+}
+
+function openImportarModal() {
+  const c = getActive();
+  if (!c) { alert('Cadastre um concurso primeiro.'); return; }
+  const sel = document.getElementById('imp-materia');
+  sel.innerHTML = c.materias.length === 0
+    ? '<option value="">(nenhuma — será criada pela linha [Matéria])</option>'
+    : c.materias.map(m => `<option value="${m.id}">${esc(m.nome)}</option>`).join('');
+  document.getElementById('imp-texto').value = '';
+  openModal('modal-importar');
+}
+
+function importQuestoes(e) {
+  e.preventDefault();
+  const texto = document.getElementById('imp-texto').value;
+  const materiaPadraoId = document.getElementById('imp-materia').value;
+  const { questoes, problemas } = parseQuestoes(texto, materiaPadraoId);
+  if (questoes.length === 0) {
+    alert('Nenhuma questão reconhecida. Confira o formato: enunciado, alternativas A) a E) e a linha GABARITO: X.');
+    return;
+  }
+  cache.questoes.push(...questoes);
+  save('questoes');
+  closeModal('modal-importar');
+  renderAll();
+  alert(`✅ ${questoes.length} questão(ões) importada(s)!` + (problemas ? `\n⚠️ ${problemas} bloco(s) não reconhecido(s) — confira o formato.` : ''));
+}
+
+function delQuestao(id) {
+  if (!confirm('Excluir esta questão?')) return;
+  cache.questoes = cache.questoes.filter(q => q.id !== id);
+  save('questoes');
+  renderQuiz();
+}
+
+/* ─── Telas do quiz ─── */
+function showQuizScreen(name) {
+  ['home', 'session', 'result'].forEach(s => {
+    document.getElementById('quiz-' + s).style.display = (s === name) ? 'block' : 'none';
+  });
+}
+
+function renderQuiz() {
+  const c = getActive();
+  const qs = c ? cache.questoes.filter(q => q.concursoId === c.id) : [];
+
+  document.getElementById('qz-total').textContent = qs.length;
+  const respondidas = qs.filter(q => (q.acertos || 0) + (q.erros || 0) > 0);
+  document.getElementById('qz-respondidas').textContent = respondidas.length;
+  const tA = qs.reduce((a, q) => a + (q.acertos || 0), 0);
+  const tT = qs.reduce((a, q) => a + (q.acertos || 0) + (q.erros || 0), 0);
+  document.getElementById('qz-acerto').textContent = tT ? Math.round(tA / tT * 100) + '%' : '—';
+
+  const sel = document.getElementById('qz-livre-materia');
+  const keep = sel.value;
+  sel.innerHTML = '<option value="todas">Todas as matérias</option>' +
+    (c ? c.materias.map(m => `<option value="${m.id}">${esc(m.nome)}</option>`).join('') : '');
+  if (keep && [...sel.options].some(o => o.value === keep)) sel.value = keep;
+
+  const hist = cache.simulados.filter(s => c && s.concursoId === c.id).slice(-5).reverse();
+  document.getElementById('qz-historico').innerHTML = hist.length === 0 ? '' :
+    '<div class="hint" style="margin-top:12px;margin-bottom:4px">Últimos simulados:</div>' +
+    hist.map(s => `<div class="sessao-row">
+      <div class="sessao-info"><div class="sessao-meta">${fmtDate(s.data)} · ${s.total} questões</div></div>
+      <span class="sessao-tempo">${s.acertos}/${s.total} (${Math.round(s.acertos / s.total * 100)}%)</span>
+    </div>`).join('');
+
+  const banco = document.getElementById('qz-banco');
+  if (!c) { banco.innerHTML = '<p class="hint">Cadastre um concurso primeiro.</p>'; return; }
+  if (qs.length === 0) {
+    banco.innerHTML = '<p class="hint">Nenhuma questão ainda. Importe questões de provas antigas — peça ao Claude para converter o PDF de uma prova para o formato de importação!</p>';
+    return;
+  }
+  const grupos = c.materias.map(m => ({ m, qs: qs.filter(q => q.materiaId === m.id) })).filter(g => g.qs.length);
+  const orfas = qs.filter(q => !c.materias.some(m => m.id === q.materiaId));
+  banco.innerHTML = grupos.map(g => `
+    <details class="qz-banco-mat">
+      <summary>${esc(g.m.nome)} — ${g.qs.length} questão(ões)</summary>
+      ${g.qs.map(q => `<div class="qz-banco-item">
+        <span>${esc(q.enunciado.slice(0, 90))}${q.enunciado.length > 90 ? '…' : ''}</span>
+        <button class="btn-small btn-danger" onclick="delQuestao('${q.id}')">🗑</button>
+      </div>`).join('')}
+    </details>`).join('') +
+    (orfas.length ? `<details class="qz-banco-mat"><summary>Sem matéria — ${orfas.length}</summary>
+      ${orfas.map(q => `<div class="qz-banco-item"><span>${esc(q.enunciado.slice(0, 90))}</span>
+      <button class="btn-small btn-danger" onclick="delQuestao('${q.id}')">🗑</button></div>`).join('')}</details>` : '');
+}
+
+/* ─── Estudo livre ─── */
+function startLivre(idsOverride) {
+  const c = getActive();
+  if (!c) { alert('Cadastre um concurso primeiro.'); return; }
+  let pool = cache.questoes.filter(q => q.concursoId === c.id);
+  if (idsOverride) {
+    pool = pool.filter(q => idsOverride.includes(q.id));
+  } else {
+    const mat = document.getElementById('qz-livre-materia').value;
+    if (mat !== 'todas') pool = pool.filter(q => q.materiaId === mat);
+    const filtro = document.getElementById('qz-livre-filtro').value;
+    if (filtro === 'novas')   pool = pool.filter(q => !((q.acertos || 0) + (q.erros || 0)));
+    if (filtro === 'erradas') pool = pool.filter(q => q.ultimo === 'errado');
+  }
+  if (pool.length === 0) { alert('Nenhuma questão encontrada com esses filtros.'); return; }
+  quiz = { modo: 'livre', pool: shuffle(pool.slice()), idx: 0, respostas: {}, respondida: false, acertos: 0, interval: null };
+  document.getElementById('qz-timer').style.display = 'none';
+  showQuizScreen('session');
+  renderQuizQuestion();
+}
+
+function answerLivre(i) {
+  if (quiz.respondida) return;
+  const q = quiz.pool[quiz.idx];
+  quiz.respostas[q.id] = i;
+  quiz.respondida = true;
+  const ok = i === q.correta;
+  if (ok) quiz.acertos++;
+  q.acertos = (q.acertos || 0) + (ok ? 1 : 0);
+  q.erros   = (q.erros   || 0) + (ok ? 0 : 1);
+  q.ultimo  = ok ? 'certo' : 'errado';
+  save('questoes');
+  renderQuizQuestion();
+}
+
+function nextLivre() {
+  quiz.idx++;
+  quiz.respondida = false;
+  renderQuizQuestion();
+}
+
+function finishLivre() {
+  const erradas = quiz.pool
+    .filter(q => quiz.respostas[q.id] !== q.correta)
+    .map(q => ({ q, r: quiz.respostas[q.id] }));
+  showResult(quiz.acertos, quiz.pool.length, erradas);
+}
+
+/* ─── Simulado ─── */
+function startSimulado() {
+  const c = getActive();
+  if (!c) { alert('Cadastre um concurso primeiro.'); return; }
+  const todas = cache.questoes.filter(q => q.concursoId === c.id);
+  if (todas.length === 0) { alert('Importe questões primeiro.'); return; }
+  const qtd = Math.min(parseInt(document.getElementById('qz-sim-qtd').value, 10) || 10, todas.length);
+  const minutos = parseInt(document.getElementById('qz-sim-min').value, 10) || 0;
+  quiz = {
+    modo: 'simulado',
+    pool: shuffle(todas.slice()).slice(0, qtd),
+    idx: 0, respostas: {}, interval: null,
+    tempo: minutos * 60
+  };
+  const timerEl = document.getElementById('qz-timer');
+  if (minutos > 0) {
+    timerEl.style.display = 'inline';
+    timerEl.classList.remove('acabando');
+    updateQuizTimer();
+    quiz.interval = setInterval(() => {
+      quiz.tempo--;
+      updateQuizTimer();
+      if (quiz.tempo <= 0) {
+        clearInterval(quiz.interval);
+        alert('⏰ Tempo esgotado!');
+        finishSimulado(true);
+      }
+    }, 1000);
+  } else {
+    timerEl.style.display = 'none';
+  }
+  showQuizScreen('session');
+  renderQuizQuestion();
+}
+
+function updateQuizTimer() {
+  const el = document.getElementById('qz-timer');
+  const m = Math.floor(quiz.tempo / 60), s = quiz.tempo % 60;
+  el.textContent = `⏳ ${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  if (quiz.tempo <= 60) el.classList.add('acabando');
+}
+
+function answerSimulado(i) {
+  const q = quiz.pool[quiz.idx];
+  quiz.respostas[q.id] = (quiz.respostas[q.id] === i) ? undefined : i;
+  renderQuizQuestion();
+}
+
+function navSim(d) {
+  quiz.idx += d;
+  renderQuizQuestion();
+}
+
+function finishSimulado(force) {
+  const emBranco = quiz.pool.filter(q => quiz.respostas[q.id] === undefined).length;
+  if (!force && emBranco > 0 && !confirm(`${emBranco} questão(ões) em branco. Finalizar mesmo assim?`)) return;
+  if (quiz.interval) clearInterval(quiz.interval);
+  let acertos = 0;
+  const erradas = [];
+  quiz.pool.forEach(q => {
+    const r = quiz.respostas[q.id];
+    if (r === undefined) { erradas.push({ q, r: null }); return; }
+    const ok = r === q.correta;
+    if (ok) acertos++; else erradas.push({ q, r });
+    q.acertos = (q.acertos || 0) + (ok ? 1 : 0);
+    q.erros   = (q.erros   || 0) + (ok ? 0 : 1);
+    q.ultimo  = ok ? 'certo' : 'errado';
+  });
+  save('questoes');
+  cache.simulados.push({ id: genId(), concursoId: getActive().id, data: todayISO(), total: quiz.pool.length, acertos });
+  save('simulados');
+  showResult(acertos, quiz.pool.length, erradas);
+}
+
+/* ─── Questão na tela + resultado ─── */
+function renderQuizQuestion() {
+  const q = quiz.pool[quiz.idx];
+  const c = getActive();
+  const mat = c.materias.find(m => m.id === q.materiaId);
+  const LETRAS = 'ABCDE';
+  document.getElementById('qz-progress').textContent = `Questão ${quiz.idx + 1} de ${quiz.pool.length}`;
+  document.getElementById('qz-q-materia').textContent = mat ? mat.nome : '';
+  document.getElementById('qz-q-enunciado').textContent = q.enunciado;
+
+  const resp = quiz.respostas[q.id];
+  document.getElementById('qz-q-alts').innerHTML = q.alts.map((a, i) => {
+    let cls = 'quiz-alt';
+    if (quiz.modo === 'livre' && quiz.respondida) {
+      if (i === q.correta) cls += ' certa';
+      else if (i === resp) cls += ' errada';
+    } else if (quiz.modo === 'simulado' && i === resp) {
+      cls += ' selecionada';
+    }
+    const dis = (quiz.modo === 'livre' && quiz.respondida) ? 'disabled' : '';
+    const fn = quiz.modo === 'livre' ? `answerLivre(${i})` : `answerSimulado(${i})`;
+    return `<button class="${cls}" ${dis} onclick="${fn}"><b>${LETRAS[i]})</b> ${esc(a)}</button>`;
+  }).join('');
+
+  let nav = '';
+  if (quiz.modo === 'livre') {
+    if (quiz.respondida) {
+      nav = quiz.idx < quiz.pool.length - 1
+        ? '<button class="btn-primary" onclick="nextLivre()">Próxima →</button>'
+        : '<button class="btn-primary" onclick="finishLivre()">Ver resultado 🏁</button>';
+    }
+  } else {
+    nav = (quiz.idx > 0 ? '<button class="btn-small" onclick="navSim(-1)">← Anterior</button>' : '') +
+          (quiz.idx < quiz.pool.length - 1 ? '<button class="btn-small" onclick="navSim(1)">Próxima →</button>' : '') +
+          '<button class="btn-primary" onclick="finishSimulado()">Finalizar 🏁</button>';
+  }
+  document.getElementById('qz-nav').innerHTML = nav;
+}
+
+function showResult(acertos, total, erradas) {
+  quiz.wrongIds = erradas.map(e => e.q.id);
+  const pct = Math.round(acertos / total * 100);
+  document.getElementById('qz-res-score').textContent = `${acertos}/${total}`;
+  const msg = pct >= 80 ? 'Excelente! 🌟' : pct >= 60 ? 'Bom ritmo, continue! 💪' : 'Revise os erros e tente de novo! 📖';
+  document.getElementById('qz-res-sub').textContent = `${pct}% de acerto — ${msg}`;
+  document.getElementById('qz-res-refazer').style.display = erradas.length ? 'inline-block' : 'none';
+
+  const c = getActive();
+  const LETRAS = 'ABCDE';
+  document.getElementById('qz-res-erradas').innerHTML = erradas.length === 0 ? '' :
+    '<div class="section-header"><h2>Para revisar</h2></div>' +
+    erradas.map(e => {
+      const mat = c.materias.find(m => m.id === e.q.materiaId);
+      return `<div class="qz-errada-card">
+        <div class="quiz-materia">${esc(mat ? mat.nome : '')}</div>
+        <div class="quiz-enunciado">${esc(e.q.enunciado)}</div>
+        <div class="qz-errada-resp">✗ Sua resposta: ${e.r === null ? 'em branco' : LETRAS[e.r] + ') ' + esc(e.q.alts[e.r])}</div>
+        <div class="qz-errada-certa">✓ Correta: ${LETRAS[e.q.correta]}) ${esc(e.q.alts[e.q.correta])}</div>
+      </div>`;
+    }).join('');
+  showQuizScreen('result');
+  renderQuiz();
+}
+
+function refazerErradas() {
+  startLivre(quiz.wrongIds);
+}
+
+function backToQuizHome() {
+  if (quiz && quiz.interval) clearInterval(quiz.interval);
+  quiz = null;
+  showQuizScreen('home');
+  renderQuiz();
+}
+
+function quitQuiz() {
+  if (!confirm('Sair do quiz? O progresso desta rodada será perdido.')) return;
+  backToQuizHome();
 }
 
 /* ══════════════════════════════════

@@ -50,6 +50,7 @@
       <button id="tab-etapas" onclick="setView('etapas')">Etapas</button>
       <button id="tab-materias" onclick="setView('materias')">Matérias</button>
       <button id="tab-estudos" onclick="setView('estudos')">Estudos</button>
+      <button id="tab-quiz" onclick="setView('quiz')">Quiz</button>
     </div>
     <div class="user-info" id="user-info" style="display:none">
       <img class="user-avatar" id="user-avatar" src="" alt="" />
@@ -69,6 +70,7 @@
     <button onclick="setView('etapas');closeDrawer()">🗓️ Etapas do concurso</button>
     <button onclick="setView('materias');closeDrawer()">📖 Matérias do edital</button>
     <button onclick="setView('estudos');closeDrawer()">⏱️ Sessões de estudo</button>
+    <button onclick="setView('quiz');closeDrawer()">🎯 Quiz de questões</button>
     <button onclick="setView('concursos');closeDrawer()">🏛️ Meus concursos</button>
     <hr />
     <button onclick="toggleDark()">🌙 Tema claro/escuro</button>
@@ -170,6 +172,90 @@
     </div>
   </section>
 
+  <!-- ═══ QUIZ ═══ -->
+  <section id="view-quiz" style="display:none">
+
+    <div id="quiz-home">
+      <div class="stat-grid">
+        <div class="card stat-card">
+          <div class="stat-value" id="qz-total">0</div>
+          <div class="stat-label">Questões no banco</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="qz-respondidas">0</div>
+          <div class="stat-label">Já respondidas</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value" id="qz-acerto">—</div>
+          <div class="stat-label">Taxa de acerto</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>🎯 Estudo livre</h2>
+        <p class="hint">Correção na hora, questão por questão.</p>
+        <div class="quiz-config">
+          <select id="qz-livre-materia"></select>
+          <select id="qz-livre-filtro">
+            <option value="todas">Todas as questões</option>
+            <option value="novas">Só as que nunca respondi</option>
+            <option value="erradas">Só as que errei da última vez</option>
+          </select>
+          <button class="btn-primary" onclick="startLivre()">▶ Começar</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>📝 Simulado</h2>
+        <p class="hint">Questões sorteadas de todas as matérias, correção só no final. Minutos = 0 desativa o cronômetro.</p>
+        <div class="quiz-config">
+          <label class="quiz-config-label">Questões
+            <input id="qz-sim-qtd" type="number" min="1" value="10" />
+          </label>
+          <label class="quiz-config-label">Minutos
+            <input id="qz-sim-min" type="number" min="0" value="0" />
+          </label>
+          <button class="btn-primary" onclick="startSimulado()">▶ Iniciar simulado</button>
+        </div>
+        <div id="qz-historico"></div>
+      </div>
+
+      <div class="section-header">
+        <h2>Banco de questões</h2>
+        <button class="btn-primary" onclick="openImportarModal()">+ Importar questões</button>
+      </div>
+      <div id="qz-banco"></div>
+    </div>
+
+    <div id="quiz-session" style="display:none">
+      <div class="card">
+        <div class="quiz-top">
+          <span id="qz-progress"></span>
+          <span id="qz-timer" class="qz-timer" style="display:none"></span>
+          <button class="btn-small btn-danger" onclick="quitQuiz()">✕ Sair</button>
+        </div>
+        <div class="quiz-materia" id="qz-q-materia"></div>
+        <div class="quiz-enunciado" id="qz-q-enunciado"></div>
+        <div id="qz-q-alts"></div>
+        <div class="quiz-nav" id="qz-nav"></div>
+      </div>
+    </div>
+
+    <div id="quiz-result" style="display:none">
+      <div class="card countdown-card">
+        <div class="countdown-label">Resultado</div>
+        <div class="countdown-days" id="qz-res-score">—</div>
+        <div class="countdown-sub" id="qz-res-sub"></div>
+      </div>
+      <div class="quiz-nav" style="margin-bottom:16px">
+        <button class="btn-primary" onclick="backToQuizHome()">↩ Voltar ao quiz</button>
+        <button class="btn-small" id="qz-res-refazer" onclick="refazerErradas()">🔁 Refazer as erradas</button>
+      </div>
+      <div id="qz-res-erradas"></div>
+    </div>
+
+  </section>
+
   <!-- ═══ CONCURSOS ═══ -->
   <section id="view-concursos" style="display:none">
     <div class="section-header">
@@ -258,6 +344,22 @@
       <label>Anotações</label>
       <input id="s-obs" placeholder="O que você estudou? (opcional)" />
       <button class="btn-primary" type="submit">Salvar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ MODAL: IMPORTAR QUESTÕES ═══ -->
+<div class="modal" id="modal-importar">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-importar')">✕</button>
+    <h2>Importar questões</h2>
+    <form onsubmit="importQuestoes(event)">
+      <label>Matéria padrão (usada quando o texto não tiver linha [Matéria])</label>
+      <select id="imp-materia"></select>
+      <label>Questões</label>
+      <textarea id="imp-texto" rows="12" placeholder="[Português]&#10;Enunciado da questão...&#10;A) primeira alternativa&#10;B) segunda alternativa&#10;C) terceira alternativa&#10;GABARITO: B&#10;&#10;Próxima questão..."></textarea>
+      <p class="hint">Formato: uma linha <b>[Matéria]</b> define a matéria das questões seguintes; alternativas de <b>A)</b> a <b>E)</b>; a linha <b>GABARITO: X</b> fecha cada questão. Dica: peça ao Claude para converter uma prova em PDF para este formato!</p>
+      <button class="btn-primary" type="submit">Importar</button>
     </form>
   </div>
 </div>
