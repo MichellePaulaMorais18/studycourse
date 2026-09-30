@@ -398,6 +398,99 @@ function toggleMateria(id) {
   renderMaterias();
 }
 
+/* ─── Exportar / importar a estrutura de matérias e tópicos ─── */
+function exportarMateriasJSON(c) {
+  return JSON.stringify({
+    studycourse: 'materias',
+    versao: 1,
+    concurso: c.nome,
+    materias: c.materias.map(m => ({ nome: m.nome, topicos: m.topicos.map(t => t.nome) }))
+  }, null, 2);
+}
+
+function openExportarMaterias() {
+  const c = getActive();
+  if (!c || c.materias.length === 0) { alert('Não há matérias para exportar neste concurso.'); return; }
+  document.getElementById('exp-materias-texto').value = exportarMateriasJSON(c);
+  openModal('modal-exp-materias');
+}
+
+function copiarExportMaterias() {
+  const ta = document.getElementById('exp-materias-texto');
+  const ok = () => alert('Texto copiado! É só colar em "Importar" no app de quem vai receber.');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(ta.value).then(ok, () => { ta.select(); document.execCommand('copy'); ok(); });
+  } else { ta.select(); document.execCommand('copy'); ok(); }
+}
+
+function baixarExportMaterias() {
+  const c = getActive();
+  const slug = c.nome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'concurso';
+  const blob = new Blob([document.getElementById('exp-materias-texto').value], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `materias-${slug}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function openImportarMaterias() {
+  if (!getActive()) { alert('Cadastre um concurso primeiro.'); return; }
+  document.getElementById('imp-materias-texto').value = '';
+  document.getElementById('imp-materias-arquivo').value = '';
+  openModal('modal-imp-materias');
+}
+
+function lerArquivoMaterias(input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => { document.getElementById('imp-materias-texto').value = reader.result; };
+  reader.readAsText(f);
+}
+
+// Mescla por nome (sem diferenciar caixa): cria matérias novas e só acrescenta tópicos que faltam.
+function importarMaterias(e) {
+  e.preventDefault();
+  const c = getActive();
+  let dados;
+  try { dados = JSON.parse(document.getElementById('imp-materias-texto').value); }
+  catch (_) { alert('Não consegui ler esse texto. Cole exatamente o que foi exportado pelo app.'); return; }
+  if (!dados || dados.studycourse !== 'materias' || !Array.isArray(dados.materias)) {
+    alert('Esse texto não parece uma exportação de matérias do StudyCourse.');
+    return;
+  }
+
+  let novasMaterias = 0, novosTopicos = 0;
+  dados.materias.forEach(item => {
+    const nome = typeof item.nome === 'string' ? item.nome.trim() : '';
+    if (!nome) return;
+    let m = c.materias.find(x => x.nome.trim().toLowerCase() === nome.toLowerCase());
+    if (!m) {
+      m = { id: genId(), nome, topicos: [], aberta: false };
+      c.materias.push(m);
+      novasMaterias++;
+    }
+    const tem = new Set(m.topicos.map(t => t.nome.trim().toLowerCase()));
+    (Array.isArray(item.topicos) ? item.topicos : []).forEach(t => {
+      const tn = typeof t === 'string' ? t.trim() : '';
+      if (!tn || tem.has(tn.toLowerCase())) return;
+      tem.add(tn.toLowerCase());
+      m.topicos.push({ id: genId(), nome: tn, status: 0 });
+      novosTopicos++;
+    });
+  });
+
+  save('concursos');
+  closeModal('modal-imp-materias');
+  renderAll();
+  alert(novasMaterias + novosTopicos === 0
+    ? 'Nada novo: você já tinha todas essas matérias e tópicos.'
+    : `✅ Importado: ${novasMaterias} matéria(s) nova(s) e ${novosTopicos} tópico(s) adicionado(s).`);
+}
+
 function materiaProgresso(m) {
   const total = m.topicos.length;
   if (total === 0) return { estudado: 0, revisado: 0, total: 0 };

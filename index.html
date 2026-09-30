@@ -147,7 +147,11 @@
   <section id="view-materias" style="display:none">
     <div class="section-header">
       <h2>Matérias do edital</h2>
-      <button class="btn-primary" onclick="openMateriaModal()">+ Matéria</button>
+      <div>
+        <button class="btn-small" onclick="openExportarMaterias()">⬆ Exportar</button>
+        <button class="btn-small" onclick="openImportarMaterias()">⬇ Importar</button>
+        <button class="btn-primary" onclick="openMateriaModal()">+ Matéria</button>
+      </div>
     </div>
     <p class="hint">Clique em um tópico para alternar: ⬜ não estudado → ✅ estudado → 🔁 revisado.</p>
     <div id="materias-list"></div>
@@ -364,6 +368,36 @@
       <label>Anotações</label>
       <input id="s-obs" placeholder="O que você estudou? (opcional)" />
       <button class="btn-primary" type="submit">Salvar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ MODAL: EXPORTAR MATÉRIAS ═══ -->
+<div class="modal" id="modal-exp-materias">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-exp-materias')">✕</button>
+    <h2>Exportar matérias</h2>
+    <p class="hint">Leva só as matérias e os tópicos (não o seu progresso). Copie o texto ou baixe o arquivo e envie para quem vai estudar o mesmo concurso.</p>
+    <textarea id="exp-materias-texto" rows="10" readonly onclick="this.select()"></textarea>
+    <div class="quiz-nav">
+      <button class="btn-primary" type="button" onclick="copiarExportMaterias()">📋 Copiar</button>
+      <button class="btn-small" type="button" onclick="baixarExportMaterias()">💾 Baixar arquivo</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: IMPORTAR MATÉRIAS ═══ -->
+<div class="modal" id="modal-imp-materias">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-imp-materias')">✕</button>
+    <h2>Importar matérias</h2>
+    <form onsubmit="importarMaterias(event)">
+      <label>Arquivo exportado (.json)</label>
+      <input id="imp-materias-arquivo" type="file" accept=".json,application/json,text/plain" onchange="lerArquivoMaterias(this)" />
+      <label>ou cole o texto exportado</label>
+      <textarea id="imp-materias-texto" rows="8" placeholder='{"studycourse": "materias", ...}'></textarea>
+      <p class="hint">Matérias que você já tem não são duplicadas: só os tópicos que faltam são adicionados. Seu progresso não é alterado.</p>
+      <button class="btn-primary" type="submit">Importar</button>
     </form>
   </div>
 </div>
