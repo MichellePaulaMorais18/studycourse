@@ -376,6 +376,39 @@ main { max-width: 900px; margin: 0 auto; padding: 16px; }
 .status-badge.andamento { background: rgba(59,130,246,0.15); color: var(--blue); }
 .status-badge.encerrado { background: var(--border); color: var(--muted); }
 
+/* ═══ PROCESSOS SELETIVOS ═══ */
+.stat-grid.compact { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat-grid.compact .stat-card { padding: 12px 6px; }
+.stat-grid.compact .stat-label { font-size: 0.7rem; }
+.proc-filtros { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.chip {
+  background: var(--card); border: 1px solid var(--border); color: var(--text);
+  padding: 6px 14px; border-radius: 16px; font-size: 0.82rem; cursor: pointer;
+}
+.chip.active { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+
+.proc-vaga { font-weight: 400; font-size: 0.85rem; color: var(--muted); }
+.proc-status-row { margin-top: 10px; }
+select.proc-status { width: auto; max-width: 100%; font-size: 0.8rem; font-weight: 600; padding: 5px 10px; border-radius: 10px; }
+select.proc-status.interesse { color: var(--yellow); }
+select.proc-status.inscrito, select.proc-status.andamento { color: var(--blue); }
+select.proc-status.aprovado { color: var(--green); }
+select.proc-status.reprovado { color: var(--red); }
+select.proc-status.desistiu { color: var(--muted); }
+
+.proc-etapas { margin-top: 10px; }
+.proc-etapa {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 0; border-top: 1px solid var(--border);
+}
+.proc-etapa-ico {
+  background: none; border: none; font-size: 1.2rem; cursor: pointer; padding: 2px 4px; line-height: 1;
+}
+.proc-etapa-info { flex: 1; min-width: 0; }
+.proc-etapa-nome { font-size: 0.9rem; font-weight: 600; }
+.proc-etapa.concluida .proc-etapa-nome { text-decoration: line-through; color: var(--muted); font-weight: 400; }
+.proc-etapa.atual .proc-etapa-nome { color: var(--yellow); }
+
 /* ═══ RADAR ═══ */
 .fonte-alerta { border-left: 3px solid var(--yellow); }
 .fonte-visita-alerta { color: var(--yellow); font-weight: 600; }

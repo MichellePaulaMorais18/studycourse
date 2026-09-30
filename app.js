@@ -27,6 +27,7 @@ let cache = {
   qstats:    {},   // desempenho individual por questão: { [questaoId]: {acertos, erros, ultimo} }
   simulados: [],   // [{id, concursoId, data, total, acertos}]
   fontes:    [],   // [{id, nome, link, obs, ultimaVisita}] — radar de concursos
+  processos: [],   // [{id, empresa, vaga, link, status, prazo, obs, etapas:[{id, nome, data, status, obs}]}] — trainee
   settings:  { activeId: null, dark: false }
 };
 let currentUid = null;
@@ -43,6 +44,8 @@ function normalizeCache() {
   cache.questoes  = toArr(cache.questoes);
   cache.simulados = toArr(cache.simulados);
   cache.fontes    = toArr(cache.fontes);
+  cache.processos = toArr(cache.processos);
+  cache.processos.forEach(p => { p.etapas = toArr(p.etapas); });
   cache.settings  = cache.settings || { activeId: null, dark: false };
   cache.concursos.forEach(c => {
     c.etapas   = toArr(c.etapas);
@@ -170,7 +173,8 @@ function fmtMin(min) {
 /* ══════════════════════════════════
    NAVEGAÇÃO / UI
 ══════════════════════════════════ */
-const VIEWS = ['dashboard', 'etapas', 'materias', 'estudos', 'quiz', 'fontes', 'concursos'];
+const VIEWS = ['dashboard', 'etapas', 'materias', 'estudos', 'quiz', 'fontes', 'processos', 'concursos'];
+const VIEWS_GLOBAIS = ['fontes', 'processos']; // não dependem do concurso ativo
 let currentView = 'dashboard';
 
 function setView(v) {
@@ -588,13 +592,14 @@ function renderAll() {
   renderEstudos();
   renderQuiz();
   renderFontes();
+  renderProcessos();
   renderConcursos();
 }
 
 function renderConcursoSelect() {
   const bar = document.getElementById('concurso-bar');
   const sel = document.getElementById('concurso-select');
-  if (cache.concursos.length === 0 || currentView === 'fontes') { bar.style.display = 'none'; return; }
+  if (cache.concursos.length === 0 || VIEWS_GLOBAIS.includes(currentView)) { bar.style.display = 'none'; return; }
   bar.style.display = 'flex';
   const ativo = getActive();
   sel.innerHTML = cache.concursos.map(c =>
@@ -1456,6 +1461,247 @@ function renderFontes() {
         <button class="btn-small" onclick="marcarVisita('${f.id}')">✔ Visitei hoje</button>
         <button class="btn-small" onclick="openFonteModal('${f.id}')">✏️ Editar</button>
         <button class="btn-small btn-danger" onclick="delFonte('${f.id}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ══════════════════════════════════
+   PROCESSOS SELETIVOS (TRAINEE)
+══════════════════════════════════ */
+const STATUS_PROC = {
+  interesse: '👀 Quero me inscrever',
+  inscrito:  '📨 Inscrito',
+  andamento: '🏃 Em andamento',
+  aprovado:  '🎉 Aprovado',
+  reprovado: '❌ Não passei',
+  desistiu:  '🚪 Desisti'
+};
+const PROC_ABERTOS = ['interesse', 'inscrito', 'andamento'];
+const ETAPAS_TRAINEE = ['Inscrição', 'Testes online', 'Dinâmica de grupo', 'Entrevista com RH', 'Entrevista com gestor', 'Painel final', 'Resultado'];
+const ICONE_ETAPA = { pendente: '⬜', atual: '📍', concluida: '✅' };
+let procFiltro = 'abertos';
+
+function labelDias(n) { return n === 0 ? 'hoje' : n === 1 ? 'amanhã' : `em ${n} dias`; }
+
+function getProc(id) { return cache.processos.find(p => p.id === id); }
+
+function openProcModal(id) {
+  const p = getProc(id);
+  document.getElementById('modal-proc-title').textContent = p ? 'Editar processo' : 'Novo processo seletivo';
+  document.getElementById('p-id').value      = p ? p.id : '';
+  document.getElementById('p-empresa').value = p ? p.empresa : '';
+  document.getElementById('p-vaga').value    = p ? (p.vaga || '') : '';
+  document.getElementById('p-status').value  = p ? p.status : 'interesse';
+  document.getElementById('p-prazo').value   = p ? (p.prazo || '') : '';
+  document.getElementById('p-link').value    = p ? (p.link || '') : '';
+  document.getElementById('p-obs').value     = p ? (p.obs || '') : '';
+  openModal('modal-proc');
+}
+
+function saveProc(e) {
+  e.preventDefault();
+  const id = document.getElementById('p-id').value;
+  const dados = {
+    empresa: document.getElementById('p-empresa').value.trim(),
+    vaga:    document.getElementById('p-vaga').value.trim(),
+    status:  document.getElementById('p-status').value,
+    prazo:   document.getElementById('p-prazo').value,
+    link:    document.getElementById('p-link').value.trim(),
+    obs:     document.getElementById('p-obs').value.trim()
+  };
+  if (id) Object.assign(getProc(id), dados);
+  else cache.processos.push({ id: genId(), etapas: [], ...dados });
+  save('processos');
+  closeModal('modal-proc');
+  renderProcessos();
+}
+
+function delProc(id) {
+  const p = getProc(id);
+  if (!confirm(`Excluir o processo "${p.empresa}"${p.vaga ? ' — ' + p.vaga : ''}?`)) return;
+  cache.processos = cache.processos.filter(x => x.id !== id);
+  save('processos');
+  renderProcessos();
+}
+
+function mudarStatusProc(id, status) {
+  getProc(id).status = status;
+  save('processos');
+  renderProcessos();
+}
+
+function setProcFiltro(f) { procFiltro = f; renderProcessos(); }
+
+function addEtapasTrainee(pid) {
+  const p = getProc(pid);
+  ETAPAS_TRAINEE.forEach(nome => {
+    if (!p.etapas.some(e => e.nome === nome)) p.etapas.push({ id: genId(), nome, data: '', status: 'pendente', obs: '' });
+  });
+  save('processos');
+  renderProcessos();
+}
+
+function openProcEtapaModal(pid, eid) {
+  const e = eid ? getProc(pid).etapas.find(x => x.id === eid) : null;
+  document.getElementById('modal-proc-etapa-title').textContent = e ? 'Editar etapa' : 'Nova etapa';
+  document.getElementById('pe-pid').value    = pid;
+  document.getElementById('pe-id').value     = e ? e.id : '';
+  document.getElementById('pe-nome').value   = e ? e.nome : '';
+  document.getElementById('pe-data').value   = e ? (e.data || '') : '';
+  document.getElementById('pe-status').value = e ? e.status : 'pendente';
+  document.getElementById('pe-obs').value    = e ? (e.obs || '') : '';
+  openModal('modal-proc-etapa');
+}
+
+function saveProcEtapa(ev) {
+  ev.preventDefault();
+  const p = getProc(document.getElementById('pe-pid').value);
+  const id = document.getElementById('pe-id').value;
+  const dados = {
+    nome:   document.getElementById('pe-nome').value.trim(),
+    data:   document.getElementById('pe-data').value,
+    status: document.getElementById('pe-status').value,
+    obs:    document.getElementById('pe-obs').value.trim()
+  };
+  if (dados.status === 'atual') p.etapas.forEach(x => { if (x.status === 'atual' && x.id !== id) x.status = 'pendente'; });
+  if (id) Object.assign(p.etapas.find(x => x.id === id), dados);
+  else p.etapas.push({ id: genId(), ...dados });
+  save('processos');
+  closeModal('modal-proc-etapa');
+  renderProcessos();
+}
+
+// ⬜ pendente → 📍 atual → ✅ concluída → ⬜
+function cicloProcEtapa(pid, eid) {
+  const p = getProc(pid);
+  const et = p.etapas.find(x => x.id === eid);
+  et.status = { pendente: 'atual', atual: 'concluida', concluida: 'pendente' }[et.status];
+  if (et.status === 'atual') p.etapas.forEach(x => { if (x.status === 'atual' && x.id !== eid) x.status = 'pendente'; });
+  save('processos');
+  renderProcessos();
+}
+
+function delProcEtapa(pid, eid) {
+  if (!confirm('Excluir esta etapa?')) return;
+  const p = getProc(pid);
+  p.etapas = p.etapas.filter(x => x.id !== eid);
+  save('processos');
+  renderProcessos();
+}
+
+// Datas que ainda exigem ação: prazo de inscrição (se ainda não se inscreveu) e etapas não concluídas.
+function compromissosProc(p) {
+  const itens = [];
+  if (p.status === 'interesse' && p.prazo) itens.push({ data: p.prazo, texto: 'Fim do prazo de inscrição' });
+  p.etapas.forEach(e => { if (e.status !== 'concluida' && e.data) itens.push({ data: e.data, texto: e.nome }); });
+  return itens;
+}
+
+function proximaDataProc(p) {
+  const futuras = compromissosProc(p).map(i => i.data).filter(d => daysUntil(d) >= 0).sort();
+  return futuras[0] || '';
+}
+
+function renderProcessos() {
+  const abertos = cache.processos.filter(p => PROC_ABERTOS.includes(p.status));
+
+  // Resumo e agenda (só processos em aberto)
+  const agenda = [];
+  abertos.forEach(p => compromissosProc(p).forEach(i => {
+    const d = daysUntil(i.data);
+    if (d >= 0) agenda.push({ ...i, dias: d, empresa: p.empresa });
+  }));
+  agenda.sort((a, b) => a.data.localeCompare(b.data));
+
+  document.getElementById('proc-st-abertos').textContent = abertos.length;
+  document.getElementById('proc-st-prazo').textContent =
+    abertos.filter(p => p.status === 'interesse' && p.prazo && daysUntil(p.prazo) >= 0 && daysUntil(p.prazo) <= 7).length;
+  document.getElementById('proc-st-etapas').textContent =
+    agenda.filter(i => i.dias <= 7 && i.texto !== 'Fim do prazo de inscrição').length;
+
+  document.getElementById('proc-agenda').innerHTML = agenda.length === 0
+    ? '<p class="hint">Nada marcado pela frente. Coloque datas nas etapas e nos prazos de inscrição para aparecerem aqui.</p>'
+    : agenda.slice(0, 6).map(i => `<div class="sessao-row">
+        <div class="sessao-info">
+          <div class="sessao-materia">${esc(i.empresa)} — ${esc(i.texto)}</div>
+          <div class="sessao-meta">${fmtDate(i.data)}</div>
+        </div>
+        <span class="sessao-tempo ${i.dias <= 2 ? 'fonte-visita-alerta' : ''}">${labelDias(i.dias)}</span>
+      </div>`).join('');
+
+  // Filtros
+  const encerrados = cache.processos.length - abertos.length;
+  document.getElementById('proc-filtros').innerHTML = [
+    ['abertos', `Em aberto (${abertos.length})`],
+    ['encerrados', `Encerrados (${encerrados})`],
+    ['todos', `Todos (${cache.processos.length})`]
+  ].map(([f, t]) => `<button class="chip ${procFiltro === f ? 'active' : ''}" onclick="setProcFiltro('${f}')">${t}</button>`).join('');
+
+  // Lista: em aberto com data mais próxima primeiro; sem data no fim
+  let lista = cache.processos.filter(p =>
+    procFiltro === 'todos' || (procFiltro === 'abertos') === PROC_ABERTOS.includes(p.status));
+  lista = lista.slice().sort((a, b) => {
+    const da = proximaDataProc(a), db_ = proximaDataProc(b);
+    if (da && db_) return da.localeCompare(db_);
+    return da ? -1 : db_ ? 1 : a.empresa.localeCompare(b.empresa, 'pt-BR');
+  });
+
+  const el = document.getElementById('proc-list');
+  if (cache.processos.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">💼</div><p>Nenhum processo seletivo ainda. Adicione os trainees em que você vai se inscrever ou já se inscreveu.</p></div>';
+    return;
+  }
+  if (lista.length === 0) { el.innerHTML = '<p class="hint">Nenhum processo nesta categoria.</p>'; return; }
+
+  el.innerHTML = lista.map(p => {
+    let prazoHtml = '';
+    if (p.prazo && p.status === 'interesse') {
+      const d = daysUntil(p.prazo);
+      prazoHtml = d < 0
+        ? `<div class="fonte-visita-alerta">⏰ Prazo de inscrição encerrou em ${fmtDate(p.prazo)}</div>`
+        : `<div class="${d <= 3 ? 'fonte-visita-alerta' : ''}">⏰ Inscrições até ${fmtDate(p.prazo)} (${labelDias(d)})</div>`;
+    } else if (p.prazo) {
+      prazoHtml = `<div>⏰ Inscrições até ${fmtDate(p.prazo)}</div>`;
+    }
+    const etapasHtml = p.etapas.length === 0
+      ? '<p class="hint" style="margin:8px 0 0">Sem etapas ainda — cadastre as fases do processo para acompanhar.</p>'
+      : p.etapas.map(e => {
+          const d = e.data ? daysUntil(e.data) : null;
+          let meta = e.data ? fmtDate(e.data) : '';
+          if (e.data && e.status !== 'concluida') {
+            meta += d >= 0 ? ` · ${labelDias(d)}` : ' · ⚠️ a data passou — atualize a situação';
+          }
+          return `<div class="proc-etapa ${e.status}">
+            <button class="proc-etapa-ico" title="Clique para mudar a situação" onclick="cicloProcEtapa('${p.id}','${e.id}')">${ICONE_ETAPA[e.status]}</button>
+            <div class="proc-etapa-info">
+              <div class="proc-etapa-nome">${esc(e.nome)}</div>
+              ${meta ? `<div class="sessao-meta">${meta}</div>` : ''}
+              ${e.obs ? `<div class="sessao-meta">📝 ${esc(e.obs)}</div>` : ''}
+            </div>
+            <button class="btn-small" onclick="openProcEtapaModal('${p.id}','${e.id}')">✏️</button>
+            <button class="btn-small btn-danger" onclick="delProcEtapa('${p.id}','${e.id}')">🗑</button>
+          </div>`;
+        }).join('');
+
+    return `<div class="concurso-card proc-card">
+      <h3>${esc(p.empresa)}${p.vaga ? ` <span class="proc-vaga">— ${esc(p.vaga)}</span>` : ''}</h3>
+      <div class="concurso-meta">
+        ${prazoHtml}
+        ${p.link ? `<div>🔗 <a href="${esc(p.link)}" target="_blank" rel="noopener">Abrir vaga / portal</a></div>` : ''}
+        ${p.obs ? `<div style="white-space:pre-wrap">📝 ${esc(p.obs)}</div>` : ''}
+      </div>
+      <div class="proc-status-row">
+        <select class="proc-status ${p.status}" onchange="mudarStatusProc('${p.id}', this.value)">
+          ${Object.entries(STATUS_PROC).map(([k, v]) => `<option value="${k}" ${p.status === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="proc-etapas">${etapasHtml}</div>
+      <div class="concurso-actions">
+        <button class="btn-small" onclick="openProcEtapaModal('${p.id}')">+ Etapa</button>
+        ${p.etapas.length === 0 ? `<button class="btn-small" onclick="addEtapasTrainee('${p.id}')">Usar etapas padrão</button>` : ''}
+        <button class="btn-small" onclick="openProcModal('${p.id}')">✏️ Editar</button>
+        <button class="btn-small btn-danger" onclick="delProc('${p.id}')">🗑 Excluir</button>
       </div>
     </div>`;
   }).join('');

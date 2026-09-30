@@ -66,4 +66,7 @@ Abra o `index.html` no navegador (ou publique no GitHub Pages) e entre com sua c
 - **Etapas**: acompanhe em qual fase o concurso está (inscrições, prova, resultado...)
 - **Matérias**: cole os tópicos do edital, um por linha; clique no tópico para marcar ⬜ → ✅ estudado → 🔁 revisado
 - **Estudos**: use o cronômetro ou registre manualmente o tempo estudado por matéria
+- **Quiz**: banco de questões com estudo livre e simulado; pode ser compartilhado por concurso (veja "Banco compartilhado")
+- **Radar**: sites e órgãos para conferir concursos, com registro da última visita
+- **Trainee**: processos seletivos de trainee (empresa, vaga, prazo de inscrição, situação e etapas), com agenda dos próximos compromissos
 - **Resumo**: veja quantos dias faltam para a prova, a etapa atual e seu progresso no edital

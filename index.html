@@ -52,6 +52,7 @@
       <button id="tab-estudos" onclick="setView('estudos')">Estudos</button>
       <button id="tab-quiz" onclick="setView('quiz')">Quiz</button>
       <button id="tab-fontes" onclick="setView('fontes')">Radar</button>
+      <button id="tab-processos" onclick="setView('processos')">Trainee</button>
     </div>
     <div class="user-info" id="user-info" style="display:none">
       <img class="user-avatar" id="user-avatar" src="" alt="" />
@@ -73,6 +74,7 @@
     <button onclick="setView('estudos');closeDrawer()">⏱️ Sessões de estudo</button>
     <button onclick="setView('quiz');closeDrawer()">🎯 Quiz de questões</button>
     <button onclick="setView('fontes');closeDrawer()">🔭 Radar de concursos</button>
+    <button onclick="setView('processos');closeDrawer()">💼 Processos seletivos (trainee)</button>
     <button onclick="setView('concursos');closeDrawer()">🏛️ Meus concursos</button>
     <hr />
     <button onclick="toggleDark()">🌙 Tema claro/escuro</button>
@@ -273,6 +275,25 @@
     <div id="fontes-list"></div>
   </section>
 
+  <!-- ═══ PROCESSOS SELETIVOS (TRAINEE) ═══ -->
+  <section id="view-processos" style="display:none">
+    <div class="section-header">
+      <h2>💼 Processos seletivos</h2>
+      <button class="btn-primary" onclick="openProcModal()">+ Processo</button>
+    </div>
+    <div class="stat-grid compact">
+      <div class="card stat-card"><div class="stat-value" id="proc-st-abertos">0</div><div class="stat-label">Em aberto</div></div>
+      <div class="card stat-card"><div class="stat-value" id="proc-st-prazo">0</div><div class="stat-label">Inscrições em até 7 dias</div></div>
+      <div class="card stat-card"><div class="stat-value" id="proc-st-etapas">0</div><div class="stat-label">Etapas em até 7 dias</div></div>
+    </div>
+    <div class="card">
+      <h2>📅 Próximos compromissos</h2>
+      <div id="proc-agenda"></div>
+    </div>
+    <div class="proc-filtros" id="proc-filtros"></div>
+    <div id="proc-list"></div>
+  </section>
+
   <!-- ═══ CONCURSOS ═══ -->
   <section id="view-concursos" style="display:none">
     <div class="section-header">
@@ -367,6 +388,62 @@
       <input id="s-minutos" type="number" min="1" required placeholder="Ex.: 50" />
       <label>Anotações</label>
       <input id="s-obs" placeholder="O que você estudou? (opcional)" />
+      <button class="btn-primary" type="submit">Salvar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ MODAL: PROCESSO SELETIVO ═══ -->
+<div class="modal" id="modal-proc">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-proc')">✕</button>
+    <h2 id="modal-proc-title">Novo processo seletivo</h2>
+    <form onsubmit="saveProc(event)">
+      <input type="hidden" id="p-id" />
+      <label>Empresa *</label>
+      <input id="p-empresa" required placeholder="Ex.: Ambev, Itaú, Vale..." />
+      <label>Vaga / programa</label>
+      <input id="p-vaga" placeholder="Ex.: Programa de Trainee 2027 — Tecnologia" />
+      <label>Situação</label>
+      <select id="p-status">
+        <option value="interesse">👀 Quero me inscrever</option>
+        <option value="inscrito">📨 Inscrito</option>
+        <option value="andamento">🏃 Em andamento</option>
+        <option value="aprovado">🎉 Aprovado</option>
+        <option value="reprovado">❌ Não passei</option>
+        <option value="desistiu">🚪 Desisti</option>
+      </select>
+      <label>Prazo para se inscrever</label>
+      <input id="p-prazo" type="date" />
+      <label>Link da vaga / portal</label>
+      <input id="p-link" type="url" placeholder="https://..." />
+      <label>Anotações</label>
+      <textarea id="p-obs" rows="3" placeholder="Contato do recrutador, login do portal, requisitos... (opcional)"></textarea>
+      <button class="btn-primary" type="submit">Salvar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ MODAL: ETAPA DO PROCESSO ═══ -->
+<div class="modal" id="modal-proc-etapa">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-proc-etapa')">✕</button>
+    <h2 id="modal-proc-etapa-title">Nova etapa</h2>
+    <form onsubmit="saveProcEtapa(event)">
+      <input type="hidden" id="pe-pid" />
+      <input type="hidden" id="pe-id" />
+      <label>Etapa *</label>
+      <input id="pe-nome" required placeholder="Ex.: Dinâmica de grupo, Entrevista com RH..." />
+      <label>Data</label>
+      <input id="pe-data" type="date" />
+      <label>Situação</label>
+      <select id="pe-status">
+        <option value="pendente">⬜ Pendente</option>
+        <option value="atual">📍 Etapa atual</option>
+        <option value="concluida">✅ Concluída</option>
+      </select>
+      <label>Anotações</label>
+      <input id="pe-obs" placeholder="Link da reunião, local, resultado... (opcional)" />
       <button class="btn-primary" type="submit">Salvar</button>
     </form>
   </div>
