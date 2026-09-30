@@ -49,6 +49,7 @@
       <button id="tab-dashboard" class="active" onclick="setView('dashboard')">Resumo</button>
       <button id="tab-etapas" onclick="setView('etapas')">Etapas</button>
       <button id="tab-materias" onclick="setView('materias')">Matérias</button>
+      <button id="tab-trilhas" onclick="setView('trilhas')">Trilhas</button>
       <button id="tab-estudos" onclick="setView('estudos')">Estudos</button>
       <button id="tab-quiz" onclick="setView('quiz')">Quiz</button>
       <button id="tab-fontes" onclick="setView('fontes')">Radar</button>
@@ -71,6 +72,7 @@
     <button onclick="setView('dashboard');closeDrawer()">🏠 Resumo</button>
     <button onclick="setView('etapas');closeDrawer()">🗓️ Etapas do concurso</button>
     <button onclick="setView('materias');closeDrawer()">📖 Matérias do edital</button>
+    <button onclick="setView('trilhas');closeDrawer()">🧭 Trilhas de estudo</button>
     <button onclick="setView('estudos');closeDrawer()">⏱️ Sessões de estudo</button>
     <button onclick="setView('quiz');closeDrawer()">🎯 Quiz de questões</button>
     <button onclick="setView('fontes');closeDrawer()">🔭 Radar de concursos</button>
@@ -157,6 +159,25 @@
     </div>
     <p class="hint">Clique em um tópico para alternar: ⬜ não estudado → ✅ estudado → 🔁 revisado.</p>
     <div id="materias-list"></div>
+  </section>
+
+  <!-- ═══ TRILHAS ═══ -->
+  <section id="view-trilhas" style="display:none">
+    <div class="section-header">
+      <h2>🧭 Trilhas de estudo</h2>
+      <div>
+        <button class="btn-small" onclick="openExportarTrilhas()">⬆ Exportar</button>
+        <button class="btn-small" onclick="openImportarTrilhas()">⬇ Importar</button>
+        <button class="btn-primary" onclick="openTrilhaModal()">+ Trilha</button>
+      </div>
+    </div>
+    <p class="hint">Marque os itens que você estudou: os tópicos do edital ligados a cada item passam a contar automaticamente no progresso das matérias.</p>
+    <div class="stat-grid compact">
+      <div class="card stat-card"><div class="stat-value" id="tr-st-itens">0/0</div><div class="stat-label">Itens concluídos</div></div>
+      <div class="card stat-card"><div class="stat-value" id="tr-st-topicos">0</div><div class="stat-label">Tópicos do edital cobertos</div></div>
+      <div class="card stat-card"><div class="stat-value" id="tr-st-trilhas">0</div><div class="stat-label">Trilhas</div></div>
+    </div>
+    <div id="trilhas-list"></div>
   </section>
 
   <!-- ═══ ESTUDOS ═══ -->
@@ -390,6 +411,75 @@
       <input id="s-obs" placeholder="O que você estudou? (opcional)" />
       <button class="btn-primary" type="submit">Salvar</button>
     </form>
+  </div>
+</div>
+
+<!-- ═══ MODAL: TRILHA ═══ -->
+<div class="modal" id="modal-trilha">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-trilha')">✕</button>
+    <h2 id="modal-trilha-title">Nova trilha</h2>
+    <form onsubmit="saveTrilha(event)">
+      <input type="hidden" id="tr-id" />
+      <label>Nome da trilha *</label>
+      <input id="tr-nome" required placeholder="Ex.: DevOps, Dados, n8n..." />
+      <button class="btn-primary" type="submit">Salvar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ MODAL: ITEM DA TRILHA ═══ -->
+<div class="modal" id="modal-trilha-item">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-trilha-item')">✕</button>
+    <h2 id="modal-trilha-item-title">Novo item</h2>
+    <form onsubmit="saveItemTrilha(event)">
+      <input type="hidden" id="ti-tid" />
+      <input type="hidden" id="ti-id" />
+      <label>O que você estuda neste item? *</label>
+      <input id="ti-titulo" required placeholder="Ex.: Semana 5 — Pipelines de CI/CD" />
+      <label>Anotações</label>
+      <input id="ti-nota" placeholder="Link do material, onde parou... (opcional)" />
+      <label>Tópicos do edital que este item cobre</label>
+      <p class="hint" style="margin-bottom:6px">Ao concluir o item, estes tópicos contam como estudados. <span id="ti-contador"></span></p>
+      <input id="ti-busca" type="search" placeholder="🔎 Buscar tópico ou matéria" oninput="renderTopicosItem()" />
+      <div id="ti-topicos" class="ti-lista"></div>
+      <button class="btn-primary" type="submit">Salvar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ MODAL: EXPORTAR TRILHAS ═══ -->
+<div class="modal" id="modal-exp-trilhas">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-exp-trilhas')">✕</button>
+    <h2>Exportar trilhas</h2>
+    <p class="hint">Leva as trilhas, os itens e os tópicos do edital ligados (não o seu progresso). Copie o texto ou baixe o arquivo.</p>
+    <textarea id="exp-trilhas-texto" rows="10" readonly onclick="this.select()"></textarea>
+    <div class="quiz-nav">
+      <button class="btn-primary" type="button" onclick="copiarExportTrilhas()">📋 Copiar</button>
+      <button class="btn-small" type="button" onclick="baixarExportTrilhas()">💾 Baixar arquivo</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: IMPORTAR TRILHAS ═══ -->
+<div class="modal" id="modal-imp-trilhas">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-imp-trilhas')">✕</button>
+    <h2>Importar trilhas</h2>
+    <form onsubmit="importarTrilhas(event)">
+      <label>Arquivo exportado (.json)</label>
+      <input id="imp-trilhas-arquivo" type="file" accept=".json,application/json,text/plain" onchange="lerArquivoTrilhas(this)" />
+      <label>ou cole um texto</label>
+      <textarea id="imp-trilhas-texto" rows="8" placeholder="Pode ser o texto exportado, ou uma lista simples:&#10;&#10;[DevOps]&#10;Semana 1 — Linux básico&#10;Semana 2 — Redes&#10;&#10;[Dados]&#10;Semana 1 — SQL"></textarea>
+      <p class="hint">Em lista simples, <b>[Nome]</b> começa uma trilha e cada linha é um item (você liga os tópicos do edital depois, editando o item). Trilhas e itens que já existem não são duplicados.</p>
+      <button class="btn-primary" type="submit">Importar</button>
+    </form>
+    <div class="trilha-plano">
+      <p class="hint">Ou comece pelo plano montado a partir do seu documento de integração:</p>
+      <button class="btn-small" type="button" onclick="carregarPlanoTCE()">🧭 Carregar plano TCE-GO (B02)</button>
+    </div>
   </div>
 </div>
 

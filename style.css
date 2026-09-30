@@ -376,6 +376,20 @@ main { max-width: 900px; margin: 0 auto; padding: 16px; }
 .status-badge.andamento { background: rgba(59,130,246,0.15); color: var(--blue); }
 .status-badge.encerrado { background: var(--border); color: var(--muted); }
 
+/* ═══ TRILHAS ═══ */
+.via-trilha { margin-left: auto; font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
+.trilha-pausada { opacity: 0.75; }
+.trilha-plano { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border); }
+.ti-lista { max-height: 38vh; overflow-y: auto; margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; }
+details.ti-mat { padding: 4px 0; }
+details.ti-mat summary { cursor: pointer; font-size: 0.85rem; font-weight: 600; padding: 4px 0; }
+.ti-sel { color: var(--primary); font-weight: 400; }
+.modal-box label.ti-topico {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin: 0; padding: 5px 2px; font-size: 0.82rem; font-weight: 400; color: var(--text); cursor: pointer;
+}
+.ti-topico input { width: auto; margin-top: 3px; flex-shrink: 0; }
+
 /* ═══ PROCESSOS SELETIVOS ═══ */
 .stat-grid.compact { grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .stat-grid.compact .stat-card { padding: 12px 6px; }

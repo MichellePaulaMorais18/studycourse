@@ -28,6 +28,7 @@ let cache = {
   simulados: [],   // [{id, concursoId, data, total, acertos}]
   fontes:    [],   // [{id, nome, link, obs, ultimaVisita}] — radar de concursos
   processos: [],   // [{id, empresa, vaga, link, status, prazo, obs, etapas:[{id, nome, data, status, obs}]}] — trainee
+  trilhas:   [],   // [{id, concursoId, nome, pausada, aberta, itens:[{id, titulo, nota, feito, feitoEm, vinculos:[topicoId]}]}]
   settings:  { activeId: null, dark: false }
 };
 let currentUid = null;
@@ -46,6 +47,11 @@ function normalizeCache() {
   cache.fontes    = toArr(cache.fontes);
   cache.processos = toArr(cache.processos);
   cache.processos.forEach(p => { p.etapas = toArr(p.etapas); });
+  cache.trilhas   = toArr(cache.trilhas);
+  cache.trilhas.forEach(t => {
+    t.itens = toArr(t.itens);
+    t.itens.forEach(i => { i.vinculos = toArr(i.vinculos); });
+  });
   cache.settings  = cache.settings || { activeId: null, dark: false };
   cache.concursos.forEach(c => {
     c.etapas   = toArr(c.etapas);
@@ -173,7 +179,7 @@ function fmtMin(min) {
 /* ══════════════════════════════════
    NAVEGAÇÃO / UI
 ══════════════════════════════════ */
-const VIEWS = ['dashboard', 'etapas', 'materias', 'estudos', 'quiz', 'fontes', 'processos', 'concursos'];
+const VIEWS = ['dashboard', 'etapas', 'materias', 'trilhas', 'estudos', 'quiz', 'fontes', 'processos', 'concursos'];
 const VIEWS_GLOBAIS = ['fontes', 'processos']; // não dependem do concurso ativo
 let currentView = 'dashboard';
 
@@ -257,11 +263,12 @@ function delConcurso(id) {
   cache.sessoes   = cache.sessoes.filter(s => s.concursoId !== id);
   cache.questoes  = cache.questoes.filter(q => q.concursoId !== id);
   cache.simulados = cache.simulados.filter(s => s.concursoId !== id);
+  cache.trilhas   = cache.trilhas.filter(t => t.concursoId !== id);
   if (cache.settings.activeId === id) {
     cache.settings.activeId = cache.concursos[0] ? cache.concursos[0].id : null;
     save('settings');
   }
-  save('concursos'); save('sessoes'); save('questoes'); save('simulados');
+  save('concursos'); save('sessoes'); save('questoes'); save('simulados'); save('trilhas');
   renderAll();
 }
 
@@ -386,11 +393,25 @@ function delMateria(id) {
   renderAll();
 }
 
-// 0 = não estudado → 1 = estudado → 2 = revisado → 0
+// Tópicos creditados como estudados por itens de trilha já concluídos. É calculado na hora
+// (não gravado no tópico), então desmarcar o item da trilha desfaz só o crédito automático
+// e nunca apaga o que foi marcado à mão.
+let credCache = null;
+function trilhasDoConcurso(c) { return c ? cache.trilhas.filter(t => t.concursoId === c.id) : []; }
+function creditados() {
+  if (credCache) return credCache;
+  const s = new Set();
+  trilhasDoConcurso(getActive()).forEach(t => t.itens.forEach(i => { if (i.feito) i.vinculos.forEach(id => s.add(id)); }));
+  return (credCache = s);
+}
+function statusEfetivo(t) { return Math.max(t.status, creditados().has(t.id) ? 1 : 0); }
+
+// 0 = não estudado → 1 = estudado → 2 = revisado → (volta) — parte sempre do que aparece na tela.
+// Com crédito de trilha, o tópico nunca volta abaixo de "estudado" enquanto o item estiver concluído.
 function cycleTopico(mid, tid) {
   const c = getActive();
   const t = c.materias.find(x => x.id === mid).topicos.find(x => x.id === tid);
-  t.status = (t.status + 1) % 3;
+  t.status = (statusEfetivo(t) + 1) % 3;
   save('concursos');
   renderAll();
 }
@@ -498,8 +519,8 @@ function importarMaterias(e) {
 function materiaProgresso(m) {
   const total = m.topicos.length;
   if (total === 0) return { estudado: 0, revisado: 0, total: 0 };
-  const estudado = m.topicos.filter(t => t.status >= 1).length;
-  const revisado = m.topicos.filter(t => t.status === 2).length;
+  const estudado = m.topicos.filter(t => statusEfetivo(t) >= 1).length;
+  const revisado = m.topicos.filter(t => statusEfetivo(t) === 2).length;
   return { estudado: Math.round(estudado / total * 100), revisado: Math.round(revisado / total * 100), total };
 }
 
@@ -585,10 +606,12 @@ function delSessao(id) {
    RENDER
 ══════════════════════════════════ */
 function renderAll() {
+  credCache = null;
   renderConcursoSelect();
   renderDashboard();
   renderEtapas();
   renderMaterias();
+  renderTrilhas();
   renderEstudos();
   renderQuiz();
   renderFontes();
@@ -649,7 +672,7 @@ function renderDashboard() {
 
   // Progresso do edital
   const todosTopicos = c.materias.flatMap(m => m.topicos);
-  const pct = todosTopicos.length ? Math.round(todosTopicos.filter(t => t.status >= 1).length / todosTopicos.length * 100) : 0;
+  const pct = todosTopicos.length ? Math.round(todosTopicos.filter(t => statusEfetivo(t) >= 1).length / todosTopicos.length * 100) : 0;
   document.getElementById('stat-progresso').textContent = pct + '%';
 
   // Horas
@@ -745,10 +768,15 @@ function renderMaterias() {
       </div>
       <div class="topicos-list">
         ${m.topicos.length === 0 ? '<p class="hint">Sem tópicos — edite a matéria para colar os tópicos do edital.</p>' : ''}
-        ${m.topicos.map(t => `
-          <div class="topico-item st-${t.status}" onclick="cycleTopico('${m.id}','${t.id}')">
-            <span>${ICONS[t.status]}</span><span class="topico-nome">${esc(t.nome)}</span>
-          </div>`).join('')}
+        ${m.topicos.map(t => {
+          const st = statusEfetivo(t);
+          const viaTrilha = t.status < 1 && creditados().has(t.id);
+          return `
+          <div class="topico-item st-${st}" onclick="cycleTopico('${m.id}','${t.id}')">
+            <span>${ICONS[st]}</span><span class="topico-nome">${esc(t.nome)}</span>
+            ${viaTrilha ? '<span class="via-trilha" title="Contado porque um item de trilha ligado a este tópico foi concluído">🧭 via trilha</span>' : ''}
+          </div>`;
+        }).join('')}
         <div class="materia-actions">
           <button class="btn-small" onclick="event.stopPropagation();openMateriaModal('${m.id}')">✏️ Editar / tópicos</button>
           <button class="btn-small btn-danger" onclick="event.stopPropagation();delMateria('${m.id}')">🗑 Excluir</button>
@@ -1461,6 +1489,414 @@ function renderFontes() {
         <button class="btn-small" onclick="marcarVisita('${f.id}')">✔ Visitei hoje</button>
         <button class="btn-small" onclick="openFonteModal('${f.id}')">✏️ Editar</button>
         <button class="btn-small btn-danger" onclick="delFonte('${f.id}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ══════════════════════════════════
+   TRILHAS DE ESTUDO
+══════════════════════════════════ */
+function normNome(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// Acha o tópico pelo nome da matéria + nome do tópico (sem diferenciar acentos/caixa).
+// topico '*' significa "todos os tópicos da matéria".
+function acharTopicos(c, materiaNome, topicoNome) {
+  const mn = normNome(materiaNome);
+  const m = c.materias.find(x => normNome(x.nome) === mn)
+         || c.materias.find(x => { const n = normNome(x.nome); return n.includes(mn) || mn.includes(n); });
+  if (!m) return [];
+  if (topicoNome === '*') return m.topicos.slice();
+  const tn = normNome(topicoNome);
+  const t = m.topicos.find(x => normNome(x.nome) === tn)
+         || (tn.length >= 12 ? m.topicos.find(x => { const n = normNome(x.nome); return n.includes(tn) || tn.includes(n); }) : null);
+  return t ? [t] : [];
+}
+
+function nomesTopico(c, id) {
+  for (const m of c.materias) {
+    const t = m.topicos.find(x => x.id === id);
+    if (t) return { materia: m.nome, topico: t.nome };
+  }
+  return null;
+}
+
+// Plano montado a partir do documento "Integração: Trilhas x Edital TCE-GO (B02 — TI)".
+// O documento traz o cruzamento trilha × edital, não o conteúdo semana a semana de cada trilha;
+// por isso os itens são blocos (ex.: "Semanas 5-11") ligados ao que o documento marca como coberto.
+function planoTCE() {
+  const v = (materia, ...topicos) => topicos.map(topico => ({ materia, topico }));
+  const tudo = materia => [{ materia, topico: '*' }];
+  const SO = 'Sistemas Operacionais, Redes e Nuvem', DEV = 'DevOps e Engenharia de Entrega', BD = 'Banco de Dados';
+  const IA = 'IA, Ciência de Dados e Automação', DS = 'Desenvolvimento de Sistemas', SEG = 'Segurança da Informação';
+  const ES = 'Engenharia de Software', GOV = 'Governança de TI', LEG = 'Legislação Aplicada à TI';
+  return { studycourse: 'trilhas', versao: 1, trilhas: [
+    { nome: 'DevOps', itens: [
+      { titulo: 'Semanas 1-3 e 10 — Linux, redes e cloud', nota: 'Falta Windows/PowerShell/Active Directory — está na trilha "Edital TCE-GO"',
+        vinculos: v(SO, 'TCP/IP; IPv4 e IPv6; DNS e DHCP', 'HTTP/2, HTTP/3, HTTPS, SMTP, FTP e SSH', 'Nuvem: IaaS, PaaS, SaaS e serverless') },
+      { titulo: 'Semanas 5-11 — CI/CD, IaC, observabilidade, containers e Git', nota: 'Cobertura forte de DevOps e Engenharia de Entrega',
+        vinculos: v(DEV, 'CI/CD; pipelines; automação de build e testes', 'Infraestrutura como código e gerenciamento de configuração',
+          'Observabilidade: métricas, logs, traces, telemetria e alertas', 'Git distribuído; GitHub e GitLab', 'Branching: Git Flow e trunk-based development',
+          'Pull/merge requests e revisão de código', 'Docker e Docker Compose', 'Orquestração com Kubernetes',
+          'Ambientes de desenvolvimento, homologação e produção', 'GitHub Actions, GitLab CI/CD e Jenkins') }
+    ] },
+    { nome: 'Dados', itens: [
+      { titulo: 'Semanas 1, 8 e 9 — SQL, modelagem e ETL', nota: 'Falta administração de PostgreSQL/Oracle, NoSQL e bancos vetoriais',
+        vinculos: v(BD, 'Modelo entidade-relacionamento; normalização e desnormalização', 'SQL e álgebra relacional') },
+      { titulo: 'Semanas 2 e 5-7 — Ciência de dados e IA', nota: 'Falta IA generativa e ética em IA aplicada',
+        vinculos: v(IA, 'Ciência de dados: coleta, preparação, limpeza, transformação e análise', 'Estatística aplicada e avaliação de modelos',
+          'Aprendizado supervisionado, não supervisionado e por reforço') }
+    ] },
+    { nome: 'n8n', itens: [
+      { titulo: 'Semana 3 — Credenciais, webhooks e LGPD', nota: 'Cobre só a fatia de automação de Segurança da Informação — ligue aqui os tópicos que considerar cobertos', vinculos: [] },
+      { titulo: 'Semana 6 — APIs, OAuth2 e autenticação', nota: '',
+        vinculos: v(DS, 'APIs RESTful; GraphQL e WebSockets', 'Formatos JSON e XML', 'OAuth 2.0, OpenID Connect 1.0, tokens, claims e JWT') },
+      { titulo: 'Semanas 7, 8 e 10 — Self-hosting, escalabilidade e observabilidade', nota: 'Reforça a trilha DevOps',
+        vinculos: [...v(DEV, 'Observabilidade: métricas, logs, traces, telemetria e alertas'), ...v(SO, 'Escalabilidade, alta disponibilidade, integração local-nuvem e monitoramento')] }
+    ] },
+    { nome: 'QA', pausada: true, itens: [
+      { titulo: 'Semana 11 — Performance e automação de testes', nota: 'Trilha pausada até a prova: só essa fatia aparece no edital',
+        vinculos: v(ES, 'Testes: unitários, integração, funcionais, regressão, carga e estresse; automatizados') }
+    ] },
+    { nome: 'Edital TCE-GO — lacunas', itens: [
+      { titulo: 'Engenharia de Software — fundamentos', nota: 'SOLID, Design Patterns, UML/BPMN, Scrum/Kanban/XP, requisitos',
+        vinculos: v(ES, 'Princípios SOLID, DRY, KISS e YAGNI; coesão e acoplamento', 'Modelagem com UML e BPMN', 'Padrões de projeto: criacionais, estruturais e comportamentais',
+          'Scrum, Kanban, Lean Software Development e XP', 'Requisitos funcionais e não funcionais: levantamento, especificação e gerenciamento', 'Histórias de usuário, casos de uso e critérios de aceite') },
+      { titulo: 'Governança de TI', nota: 'COBIT 2019, ITIL v4, ISO 38500, PMBOK, Lei do Governo Digital, ENGD', vinculos: tudo(GOV) },
+      { titulo: 'Legislação Aplicada à TI', nota: 'LGPD técnica, Marco Civil, certificação digital e normativos do TCE-GO (estudar direto no site do TCE-GO)', vinculos: tudo(LEG) },
+      { titulo: 'Segurança da Informação — parte ampla', nota: 'Criptografia, PKI, OWASP, Zero Trust, ISO 27000',
+        vinculos: v(SEG, 'Criptografia simétrica e assimétrica; ICP; certificados e assinatura digital', 'OWASP Top 10:2025; DevSecOps', 'Zero Trust', 'Família ABNT NBR ISO/IEC 27000') },
+      { titulo: 'Windows, PowerShell e Active Directory/LDAP', nota: 'Seu DevOps é todo Linux',
+        vinculos: v(SO, 'Windows e Linux: administração básica', 'Shell (Linux) e PowerShell; automação por scripts', 'Active Directory e LDAP') },
+      { titulo: 'Língua Inglesa técnica', nota: 'Leitura de documentação real do trabalho conta', vinculos: tudo('Língua Inglesa (Leitura Técnica)') },
+      { titulo: 'Conhecimentos Gerais — Língua Portuguesa', nota: '', vinculos: tudo('Língua Portuguesa') },
+      { titulo: 'Conhecimentos Gerais — Matemática e Raciocínio Lógico', nota: '', vinculos: tudo('Matemática e Raciocínio Lógico') },
+      { titulo: 'Conhecimentos Gerais — Legislação Institucional', nota: 'Lei Orgânica e Regimento Interno do TCE-GO: 1 sessão por semana, material denso', vinculos: tudo('Legislação Institucional') },
+      { titulo: 'Engenharia de Software assistida por IA — sistematizar a prática', nota: '2-3 sessões transformando o que você já faz no trabalho em anotação de estudo', vinculos: tudo('Eng. de Software com IA e Sistemas Agentivos') },
+      { titulo: 'Prova Discursiva — Estudo de Caso', nota: 'Treinar respostas técnicas objetivas dentro do limite de linhas, cronometrado', vinculos: [] }
+    ] }
+  ] };
+}
+
+// Mescla por nome: trilhas novas são criadas; em trilhas existentes só entram os itens que faltam.
+function aplicarTrilhas(c, dados) {
+  const r = { trilhas: 0, itens: 0, vinculosOk: 0, vinculosFalha: 0 };
+  dados.trilhas.forEach(td => {
+    const nome = typeof td.nome === 'string' ? td.nome.trim() : '';
+    if (!nome) return;
+    let t = trilhasDoConcurso(c).find(x => normNome(x.nome) === normNome(nome));
+    if (!t) {
+      t = { id: genId(), concursoId: c.id, nome, pausada: !!td.pausada, aberta: true, itens: [] };
+      cache.trilhas.push(t);
+      r.trilhas++;
+    }
+    const tem = new Set(t.itens.map(i => normNome(i.titulo)));
+    (Array.isArray(td.itens) ? td.itens : []).forEach(id => {
+      const titulo = typeof id.titulo === 'string' ? id.titulo.trim() : '';
+      if (!titulo || tem.has(normNome(titulo))) return;
+      tem.add(normNome(titulo));
+      const ids = new Set();
+      (Array.isArray(id.vinculos) ? id.vinculos : []).forEach(vn => {
+        const achados = vn && vn.materia ? acharTopicos(c, vn.materia, vn.topico || '') : [];
+        if (achados.length) { achados.forEach(x => ids.add(x.id)); r.vinculosOk++; } else r.vinculosFalha++;
+      });
+      t.itens.push({ id: genId(), titulo, nota: typeof id.nota === 'string' ? id.nota : '', feito: false, feitoEm: '', vinculos: [...ids] });
+      r.itens++;
+    });
+  });
+  save('trilhas');
+  return r;
+}
+
+function resumoTrilhas(r) {
+  if (r.trilhas + r.itens === 0) return 'Nada novo: você já tinha essas trilhas e itens.';
+  return `✅ ${r.trilhas} trilha(s) nova(s) e ${r.itens} item(ns) adicionado(s).` +
+    (r.vinculosOk ? `\n🔗 ${r.vinculosOk} ligação(ões) com tópicos do edital.` : '') +
+    (r.vinculosFalha ? `\n⚠️ ${r.vinculosFalha} ligação(ões) não encontrada(s): a matéria ou o tópico tem nome diferente no seu edital. Ligue-as editando o item.` : '');
+}
+
+function carregarPlanoTCE() {
+  const c = getActive();
+  if (!c) { alert('Cadastre um concurso primeiro.'); return; }
+  const r = aplicarTrilhas(c, planoTCE());
+  closeModal('modal-imp-trilhas');
+  renderAll();
+  alert(resumoTrilhas(r));
+}
+
+function parseTrilhasTexto(txt) {
+  const trilhas = [];
+  let cur = null;
+  txt.split('\n').forEach(raw => {
+    const l = raw.trim();
+    if (!l) return;
+    const m = l.match(/^\[(.+)\]$/);
+    if (m) { cur = { nome: m[1].trim(), itens: [] }; trilhas.push(cur); return; }
+    if (!cur) { cur = { nome: 'Minha trilha', itens: [] }; trilhas.push(cur); }
+    cur.itens.push({ titulo: l.replace(/^([-*•]|\d+[\.\)])\s+/, ''), vinculos: [] });
+  });
+  return { studycourse: 'trilhas', trilhas };
+}
+
+function importarTrilhas(e) {
+  e.preventDefault();
+  const c = getActive();
+  const txt = document.getElementById('imp-trilhas-texto').value.trim();
+  if (!txt) { alert('Cole um texto ou escolha um arquivo.'); return; }
+  let dados;
+  if (txt.startsWith('{')) {
+    try { dados = JSON.parse(txt); } catch (_) { alert('Não consegui ler esse texto. Cole exatamente o que foi exportado pelo app.'); return; }
+    if (!dados || dados.studycourse !== 'trilhas' || !Array.isArray(dados.trilhas)) { alert('Esse texto não parece uma exportação de trilhas do StudyCourse.'); return; }
+  } else {
+    dados = parseTrilhasTexto(txt);
+  }
+  const r = aplicarTrilhas(c, dados);
+  closeModal('modal-imp-trilhas');
+  renderAll();
+  alert(resumoTrilhas(r));
+}
+
+function openImportarTrilhas() {
+  if (!getActive()) { alert('Cadastre um concurso primeiro.'); return; }
+  document.getElementById('imp-trilhas-texto').value = '';
+  document.getElementById('imp-trilhas-arquivo').value = '';
+  openModal('modal-imp-trilhas');
+}
+
+function lerArquivoTrilhas(input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => { document.getElementById('imp-trilhas-texto').value = reader.result; };
+  reader.readAsText(f);
+}
+
+function exportarTrilhasJSON(c) {
+  return JSON.stringify({
+    studycourse: 'trilhas',
+    versao: 1,
+    concurso: c.nome,
+    trilhas: trilhasDoConcurso(c).map(t => ({
+      nome: t.nome,
+      pausada: !!t.pausada,
+      itens: t.itens.map(i => ({ titulo: i.titulo, nota: i.nota || '', vinculos: i.vinculos.map(id => nomesTopico(c, id)).filter(Boolean) }))
+    }))
+  }, null, 2);
+}
+
+function openExportarTrilhas() {
+  const c = getActive();
+  if (!c || trilhasDoConcurso(c).length === 0) { alert('Não há trilhas para exportar neste concurso.'); return; }
+  document.getElementById('exp-trilhas-texto').value = exportarTrilhasJSON(c);
+  openModal('modal-exp-trilhas');
+}
+
+function copiarExportTrilhas() {
+  const ta = document.getElementById('exp-trilhas-texto');
+  const ok = () => alert('Texto copiado! Cole em "Importar" no app de quem vai receber.');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(ta.value).then(ok, () => { ta.select(); document.execCommand('copy'); ok(); });
+  } else { ta.select(); document.execCommand('copy'); ok(); }
+}
+
+function baixarExportTrilhas() {
+  const slug = getActive().nome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'concurso';
+  const blob = new Blob([document.getElementById('exp-trilhas-texto').value], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `trilhas-${slug}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ─── Trilhas e itens: criar, editar, concluir ─── */
+function getTrilha(id) { return cache.trilhas.find(t => t.id === id); }
+
+function openTrilhaModal(id) {
+  const c = getActive();
+  if (!c) { alert('Cadastre um concurso primeiro.'); return; }
+  const t = getTrilha(id);
+  document.getElementById('modal-trilha-title').textContent = t ? 'Renomear trilha' : 'Nova trilha';
+  document.getElementById('tr-id').value = t ? t.id : '';
+  document.getElementById('tr-nome').value = t ? t.nome : '';
+  openModal('modal-trilha');
+}
+
+function saveTrilha(e) {
+  e.preventDefault();
+  const id = document.getElementById('tr-id').value;
+  const nome = document.getElementById('tr-nome').value.trim();
+  if (id) getTrilha(id).nome = nome;
+  else cache.trilhas.push({ id: genId(), concursoId: getActive().id, nome, pausada: false, aberta: true, itens: [] });
+  save('trilhas');
+  closeModal('modal-trilha');
+  renderTrilhas();
+}
+
+function delTrilha(id) {
+  const t = getTrilha(id);
+  if (!confirm(`Excluir a trilha "${t.nome}" e todos os itens dela?\n\nOs tópicos ligados deixam de contar como estudados por ela.`)) return;
+  cache.trilhas = cache.trilhas.filter(x => x.id !== id);
+  save('trilhas');
+  renderAll();
+}
+
+function pausarTrilha(id) {
+  const t = getTrilha(id);
+  t.pausada = !t.pausada;
+  save('trilhas');
+  renderTrilhas();
+}
+
+function toggleTrilha(id) {
+  const t = getTrilha(id);
+  t.aberta = !t.aberta;
+  save('trilhas');
+  renderTrilhas();
+}
+
+function toggleItemTrilha(tid, iid) {
+  const i = getTrilha(tid).itens.find(x => x.id === iid);
+  i.feito = !i.feito;
+  i.feitoEm = i.feito ? todayISO() : '';
+  save('trilhas');
+  renderAll();
+}
+
+function delItemTrilha(tid, iid) {
+  if (!confirm('Excluir este item?')) return;
+  const t = getTrilha(tid);
+  t.itens = t.itens.filter(x => x.id !== iid);
+  save('trilhas');
+  renderAll();
+}
+
+let tiSel = new Set();
+
+function openItemTrilhaModal(tid, iid) {
+  const c = getActive();
+  const i = iid ? getTrilha(tid).itens.find(x => x.id === iid) : null;
+  document.getElementById('modal-trilha-item-title').textContent = i ? 'Editar item' : 'Novo item';
+  document.getElementById('ti-tid').value = tid;
+  document.getElementById('ti-id').value = i ? i.id : '';
+  document.getElementById('ti-titulo').value = i ? i.titulo : '';
+  document.getElementById('ti-nota').value = i ? (i.nota || '') : '';
+  document.getElementById('ti-busca').value = '';
+  const existentes = new Set(c.materias.flatMap(m => m.topicos.map(t => t.id)));
+  tiSel = new Set(i ? i.vinculos.filter(id => existentes.has(id)) : []);
+  renderTopicosItem();
+  openModal('modal-trilha-item');
+}
+
+function atualizarContadorItem() {
+  document.getElementById('ti-contador').textContent = tiSel.size ? `${tiSel.size} selecionado(s).` : 'Nenhum selecionado.';
+}
+
+function renderTopicosItem() {
+  const c = getActive();
+  const f = normNome(document.getElementById('ti-busca').value);
+  const html = c.materias.map(m => {
+    const ts = m.topicos.filter(t => !f || normNome(t.nome).includes(f) || normNome(m.nome).includes(f));
+    if (ts.length === 0) return '';
+    const sel = m.topicos.filter(t => tiSel.has(t.id)).length;
+    return `<details class="ti-mat" ${f || sel ? 'open' : ''}>
+      <summary>${esc(m.nome)}${sel ? ` <span class="ti-sel">· ${sel} selecionado(s)</span>` : ''}</summary>
+      ${ts.map(t => `<label class="ti-topico"><input type="checkbox" ${tiSel.has(t.id) ? 'checked' : ''} onchange="tiToggle('${t.id}', this.checked)" /> <span>${esc(t.nome)}</span></label>`).join('')}
+    </details>`;
+  }).join('');
+  document.getElementById('ti-topicos').innerHTML = html || '<p class="hint">Nenhum tópico encontrado. Cadastre as matérias e tópicos do edital na aba Matérias.</p>';
+  atualizarContadorItem();
+}
+
+function tiToggle(id, marcado) {
+  if (marcado) tiSel.add(id); else tiSel.delete(id);
+  atualizarContadorItem();
+}
+
+function saveItemTrilha(e) {
+  e.preventDefault();
+  const t = getTrilha(document.getElementById('ti-tid').value);
+  const id = document.getElementById('ti-id').value;
+  const dados = {
+    titulo: document.getElementById('ti-titulo').value.trim(),
+    nota: document.getElementById('ti-nota').value.trim(),
+    vinculos: [...tiSel]
+  };
+  if (id) Object.assign(t.itens.find(x => x.id === id), dados);
+  else t.itens.push({ id: genId(), feito: false, feitoEm: '', ...dados });
+  save('trilhas');
+  closeModal('modal-trilha-item');
+  renderAll();
+}
+
+function renderTrilhas() {
+  const c = getActive();
+  const el = document.getElementById('trilhas-list');
+  if (!c) {
+    el.innerHTML = '<p class="hint">Cadastre um concurso primeiro.</p>';
+    ['tr-st-itens', 'tr-st-topicos', 'tr-st-trilhas'].forEach(id => { document.getElementById(id).textContent = id === 'tr-st-itens' ? '0/0' : '0'; });
+    return;
+  }
+  const ts = trilhasDoConcurso(c);
+  const todosItens = ts.flatMap(t => t.itens);
+  const existentes = new Set(c.materias.flatMap(m => m.topicos.map(t => t.id)));
+  document.getElementById('tr-st-itens').textContent = `${todosItens.filter(i => i.feito).length}/${todosItens.length}`;
+  document.getElementById('tr-st-topicos').textContent = [...creditados()].filter(id => existentes.has(id)).length;
+  document.getElementById('tr-st-trilhas').textContent = ts.length;
+
+  if (ts.length === 0) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">🧭</div>
+      <p>Nenhuma trilha ainda. Comece pelo plano montado a partir do seu documento de integração, ou crie as suas.</p>
+      <div class="quiz-nav" style="justify-content:center">
+        <button class="btn-primary" onclick="carregarPlanoTCE()">🧭 Carregar plano TCE-GO (B02)</button>
+        <button class="btn-small" onclick="openTrilhaModal()">+ Criar trilha</button>
+        <button class="btn-small" onclick="openImportarTrilhas()">⬇ Importar</button>
+      </div></div>`;
+    return;
+  }
+
+  el.innerHTML = ts.map(t => {
+    const feitos = t.itens.filter(i => i.feito).length;
+    const pct = t.itens.length ? Math.round(feitos / t.itens.length * 100) : 0;
+    const itens = t.itens.length === 0
+      ? '<p class="hint">Trilha vazia — adicione os itens que você vai estudar.</p>'
+      : t.itens.map(i => {
+          const ligados = i.vinculos.map(id => nomesTopico(c, id)).filter(Boolean);
+          const meta = [
+            ligados.length ? `<span title="${esc(ligados.map(x => x.materia + ' › ' + x.topico).join('\n'))}">🔗 ${ligados.length} tópico(s) do edital</span>` : '<span>sem tópicos do edital ligados</span>',
+            i.feito && i.feitoEm ? `concluído em ${fmtDate(i.feitoEm)}` : ''
+          ].filter(Boolean).join(' · ');
+          return `<div class="proc-etapa ${i.feito ? 'concluida' : 'pendente'}">
+            <button class="proc-etapa-ico" title="${i.feito ? 'Desmarcar' : 'Marcar como estudado'}" onclick="toggleItemTrilha('${t.id}','${i.id}')">${i.feito ? '✅' : '⬜'}</button>
+            <div class="proc-etapa-info">
+              <div class="proc-etapa-nome">${esc(i.titulo)}</div>
+              <div class="sessao-meta">${meta}</div>
+              ${i.nota ? `<div class="sessao-meta">📝 ${esc(i.nota)}</div>` : ''}
+            </div>
+            <button class="btn-small" onclick="openItemTrilhaModal('${t.id}','${i.id}')">✏️</button>
+            <button class="btn-small btn-danger" onclick="delItemTrilha('${t.id}','${i.id}')">🗑</button>
+          </div>`;
+        }).join('');
+    return `<div class="materia-card ${t.aberta ? 'open' : ''} ${t.pausada ? 'trilha-pausada' : ''}">
+      <div class="materia-header" onclick="toggleTrilha('${t.id}')">
+        <div>
+          <div class="materia-nome">${t.aberta ? '▾' : '▸'} ${esc(t.nome)} ${t.pausada ? '<span class="status-badge encerrado">⏸ pausada</span>' : ''}</div>
+          <div class="materia-meta">${feitos}/${t.itens.length} itens · ${pct}%</div>
+        </div>
+      </div>
+      <div class="progress-track" style="margin-top:8px"><div class="progress-fill" style="width:${pct}%"></div></div>
+      <div class="topicos-list">
+        ${itens}
+        <div class="materia-actions">
+          <button class="btn-small" onclick="openItemTrilhaModal('${t.id}')">+ Item</button>
+          <button class="btn-small" onclick="pausarTrilha('${t.id}')">${t.pausada ? '▶ Retomar' : '⏸ Pausar'}</button>
+          <button class="btn-small" onclick="openTrilhaModal('${t.id}')">✏️ Renomear</button>
+          <button class="btn-small btn-danger" onclick="delTrilha('${t.id}')">🗑 Excluir</button>
+        </div>
       </div>
     </div>`;
   }).join('');
