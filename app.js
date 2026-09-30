@@ -23,7 +23,8 @@ if (configOk) {
 let cache = {
   concursos: [],   // [{id, nome, orgao, cargo, banca, dataProva, editalLink, etapas:[], materias:[]}]
   sessoes:   [],   // [{id, concursoId, materiaId, data, minutos, obs}]
-  questoes:  [],   // [{id, concursoId, materiaId, enunciado, alts:[], correta, acertos, erros, ultimo}]
+  questoes:  [],   // banco PESSOAL (concurso sem bancoId): [{id, concursoId, materia, enunciado, alts:[], correta, autor}]
+  qstats:    {},   // desempenho individual por questão: { [questaoId]: {acertos, erros, ultimo} }
   simulados: [],   // [{id, concursoId, data, total, acertos}]
   fontes:    [],   // [{id, nome, link, obs, ultimaVisita}] — radar de concursos
   settings:  { activeId: null, dark: false }
@@ -49,6 +50,27 @@ function normalizeCache() {
     c.materias.forEach(m => { m.topicos = toArr(m.topicos); });
   });
   cache.questoes.forEach(q => { q.alts = toArr(q.alts); });
+  if (!cache.qstats || typeof cache.qstats !== 'object') cache.qstats = {};
+  return migrarQuestoesLegadas();
+}
+
+// Formato antigo: questão ligada à matéria por id e com acertos/erros dentro dela.
+// Novo formato: matéria por nome (comparável entre contas) e desempenho em qstats.
+function migrarQuestoesLegadas() {
+  let mudou = false;
+  cache.questoes.forEach(q => {
+    if (q.materia !== undefined && q.materiaId === undefined) return;
+    const c = cache.concursos.find(x => x.id === q.concursoId);
+    const m = c && c.materias.find(x => x.id === q.materiaId);
+    q.materia = q.materia || (m ? m.nome : 'Geral');
+    if (q.acertos || q.erros || q.ultimo) {
+      cache.qstats[q.id] = { acertos: q.acertos || 0, erros: q.erros || 0, ultimo: q.ultimo || '' };
+    }
+    delete q.materiaId; delete q.acertos; delete q.erros; delete q.ultimo;
+    if (q.autor === undefined) q.autor = '';
+    mudou = true;
+  });
+  return mudou;
 }
 
 async function loadFromDatabase() {
@@ -58,7 +80,7 @@ async function loadFromDatabase() {
     Object.keys(cache).forEach(k => {
       if (data[k] !== undefined) cache[k] = data[k];
     });
-    normalizeCache();
+    if (normalizeCache()) { save('questoes'); save('qstats'); }
   } catch (e) { console.warn('Database load error', e); }
 }
 
@@ -717,19 +739,72 @@ function shuffle(arr) {
   return arr;
 }
 
-function findOrCreateMateria(nome) {
+/* ─── Origem das questões: banco pessoal ou banco compartilhado do concurso ─── */
+const bancoCache = {};                        // bancoId -> [questões] (espelho em tempo real)
+let bancoWatch = { id: null, ref: null };
+let bancoErro = '';
+
+function msgErroBanco(e) {
+  return e && e.code === 'PERMISSION_DENIED'
+    ? 'Sem permissão no Firebase. Publique as regras novas do Realtime Database (README, seção "Banco compartilhado").'
+    : (e && e.message) || String(e);
+}
+
+// Liga/desliga a escuta do banco conforme o concurso ativo.
+function syncBanco() {
+  if (!db || !currentUid) return;
   const c = getActive();
-  let m = c.materias.find(x => x.nome.toLowerCase() === nome.toLowerCase());
-  if (!m) {
-    m = { id: genId(), nome, topicos: [], aberta: false };
-    c.materias.push(m);
-    save('concursos');
-  }
-  return m.id;
+  const id = c && c.bancoId ? c.bancoId : null;
+  if (bancoWatch.id === id) return;
+  if (bancoWatch.ref) bancoWatch.ref.off();
+  bancoWatch = { id, ref: null };
+  bancoErro = '';
+  if (!id) return;
+  const ref = db.ref('bancos/' + id + '/questoes');
+  bancoWatch.ref = ref;
+  ref.on('value', snap => {
+    bancoErro = '';
+    // No banco o id da questão é a chave do nó, não um campo — devolve para dentro do objeto.
+    bancoCache[id] = Object.entries(snap.val() || {}).map(([qid, q]) => ({ ...q, id: qid, alts: toArr(q.alts) }));
+    renderQuiz();
+  }, err => {
+    bancoErro = msgErroBanco(err);
+    renderQuiz();
+  });
+}
+
+function questoesDoConcurso(c) {
+  if (!c) return [];
+  if (c.bancoId) return bancoCache[c.bancoId] || [];
+  return cache.questoes.filter(q => q.concursoId === c.id);
+}
+
+function statOf(q) { return cache.qstats[q.id] || { acertos: 0, erros: 0, ultimo: '' }; }
+
+function registrarResposta(q, ok) {
+  const s = statOf(q);
+  cache.qstats[q.id] = { acertos: s.acertos + (ok ? 1 : 0), erros: s.erros + (ok ? 0 : 1), ultimo: ok ? 'certo' : 'errado' };
+}
+
+// Mesma questão importada por pessoas diferentes não deve duplicar no banco.
+function chaveQuestao(q) {
+  return (q.enunciado + '|' + q.alts.join('|')).toLowerCase().replace(/[^a-z0-9à-ú]/g, '');
+}
+
+function podeExcluir(c, q) { return !c.bancoId || q.autor === currentUid; }
+
+// Reaproveita a grafia já existente (matérias do concurso, do banco ou desta importação),
+// ignorando maiúsculas/minúsculas e espaços, para não criar "Direito" e "direito" separados.
+function nomeMateriaCanonico(c, nome, vistas) {
+  const k = nome.trim().toLowerCase();
+  if (vistas[k]) return vistas[k];
+  const existente = c.materias.map(m => m.nome).concat(questoesDoConcurso(c).map(q => q.materia))
+    .find(n => n.trim().toLowerCase() === k);
+  return (vistas[k] = existente || nome.trim());
 }
 
 // Formato: [Matéria] muda a matéria; alternativas "A) ..." a "E) ..."; "GABARITO: X" fecha a questão.
-function parseQuestoes(texto, materiaPadraoId) {
+function parseQuestoes(texto, materiaPadrao) {
   const c = getActive();
   const LETRAS = 'ABCDE';
   const altRe = /^\(?([A-Ea-e])[\)\.\:]\s*(.+)$/;
@@ -737,7 +812,8 @@ function parseQuestoes(texto, materiaPadraoId) {
   const matRe = /^\[(.+)\]\s*$/;
   const questoes = [];
   let problemas = 0;
-  let materiaId = materiaPadraoId;
+  const vistas = {};
+  let materia = materiaPadrao || 'Geral';
   let enun = [], alts = [];
 
   const descarta = () => { if (enun.length || alts.length) problemas++; enun = []; alts = []; };
@@ -749,7 +825,7 @@ function parseQuestoes(texto, materiaPadraoId) {
     const mMat = l.match(matRe);
     if (mMat) {
       descarta();
-      materiaId = findOrCreateMateria(mMat[1].trim());
+      materia = nomeMateriaCanonico(c, mMat[1], vistas);
       continue;
     }
 
@@ -759,12 +835,10 @@ function parseQuestoes(texto, materiaPadraoId) {
       if (enun.length && alts.length >= 2 && idx > -1 && idx < alts.length) {
         questoes.push({
           id: genId(),
-          concursoId: c.id,
-          materiaId: materiaId || findOrCreateMateria('Geral'),
+          materia,
           enunciado: enun.join('\n'),
           alts: alts.slice(),
-          correta: idx,
-          acertos: 0, erros: 0, ultimo: ''
+          correta: idx
         });
       } else problemas++;
       enun = []; alts = [];
@@ -791,33 +865,165 @@ function openImportarModal() {
   if (!c) { alert('Cadastre um concurso primeiro.'); return; }
   const sel = document.getElementById('imp-materia');
   sel.innerHTML = c.materias.length === 0
-    ? '<option value="">(nenhuma — será criada pela linha [Matéria])</option>'
-    : c.materias.map(m => `<option value="${m.id}">${esc(m.nome)}</option>`).join('');
+    ? '<option value="Geral">Geral</option>'
+    : c.materias.map(m => `<option value="${esc(m.nome)}">${esc(m.nome)}</option>`).join('');
   document.getElementById('imp-texto').value = '';
   openModal('modal-importar');
 }
 
-function importQuestoes(e) {
+async function importQuestoes(e) {
   e.preventDefault();
+  const c = getActive();
   const texto = document.getElementById('imp-texto').value;
-  const materiaPadraoId = document.getElementById('imp-materia').value;
-  const { questoes, problemas } = parseQuestoes(texto, materiaPadraoId);
+  const materiaPadrao = document.getElementById('imp-materia').value;
+  const { questoes, problemas } = parseQuestoes(texto, materiaPadrao);
   if (questoes.length === 0) {
     alert('Nenhuma questão reconhecida. Confira o formato: enunciado, alternativas A) a E) e a linha GABARITO: X.');
     return;
   }
-  cache.questoes.push(...questoes);
-  save('questoes');
+
+  const existentes = new Set(questoesDoConcurso(c).map(chaveQuestao));
+  const novas = [];
+  let duplicadas = 0;
+  questoes.forEach(q => {
+    const k = chaveQuestao(q);
+    if (existentes.has(k)) { duplicadas++; return; }
+    existentes.add(k);
+    novas.push(q);
+  });
+  if (novas.length === 0) {
+    alert(`Essas ${duplicadas} questão(ões) já estão no banco — nada foi importado.`);
+    return;
+  }
+
+  if (c.bancoId) {
+    const payload = {};
+    novas.forEach(q => {
+      payload[q.id] = { materia: q.materia, enunciado: q.enunciado, alts: q.alts, correta: q.correta, autor: currentUid, criadoEm: Date.now() };
+    });
+    try {
+      await db.ref('bancos/' + c.bancoId + '/questoes').update(payload);
+    } catch (err) {
+      alert('Não foi possível salvar no banco compartilhado:\n' + msgErroBanco(err));
+      return;
+    }
+  } else {
+    cache.questoes.push(...novas.map(q => ({ ...q, concursoId: c.id, autor: currentUid || '' })));
+    save('questoes');
+  }
   closeModal('modal-importar');
   renderAll();
-  alert(`✅ ${questoes.length} questão(ões) importada(s)!` + (problemas ? `\n⚠️ ${problemas} bloco(s) não reconhecido(s) — confira o formato.` : ''));
+  alert(`✅ ${novas.length} questão(ões) importada(s)!` +
+    (duplicadas ? `\n♻️ ${duplicadas} já existia(m) no banco e foi(ram) ignorada(s).` : '') +
+    (problemas ? `\n⚠️ ${problemas} bloco(s) não reconhecido(s) — confira o formato.` : ''));
 }
 
-function delQuestao(id) {
-  if (!confirm('Excluir esta questão?')) return;
+async function delQuestao(id) {
+  const c = getActive();
+  if (!confirm('Excluir esta questão?' + (c.bancoId ? '\n\nEla sairá do banco de todos que o usam.' : ''))) return;
+  if (c.bancoId) {
+    try { await db.ref('bancos/' + c.bancoId + '/questoes/' + id).remove(); }
+    catch (err) { alert('Não foi possível excluir:\n' + msgErroBanco(err)); }
+    return;
+  }
   cache.questoes = cache.questoes.filter(q => q.id !== id);
   save('questoes');
   renderQuiz();
+}
+
+/* ─── Banco compartilhado: criar, entrar, copiar código, sair ─── */
+function novoCodigoBanco() {
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
+  return Array.from(bytes, b => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join('');
+}
+
+// Ao ligar o concurso a um banco, oferece levar junto as questões pessoais que já existiam.
+async function moverPessoaisParaBanco(c, bancoId) {
+  const pessoais = cache.questoes.filter(q => q.concursoId === c.id);
+  if (pessoais.length === 0) return;
+  if (!confirm(`Você já tem ${pessoais.length} questão(ões) pessoais neste concurso.\n\nEnviá-las para o banco compartilhado?\n(Se cancelar, elas ficam guardadas só para você e voltam a aparecer se você sair do banco.)`)) return;
+
+  const snap = await db.ref('bancos/' + bancoId + '/questoes').once('value');
+  const jaNoBanco = new Set(Object.values(snap.val() || {}).map(q => chaveQuestao({ ...q, alts: toArr(q.alts) })));
+  const payload = {};
+  pessoais.forEach(q => {
+    if (jaNoBanco.has(chaveQuestao(q))) return;
+    payload[q.id] = { materia: q.materia, enunciado: q.enunciado, alts: q.alts, correta: q.correta, autor: currentUid, criadoEm: Date.now() };
+  });
+  if (Object.keys(payload).length) await db.ref('bancos/' + bancoId + '/questoes').update(payload);
+  cache.questoes = cache.questoes.filter(q => q.concursoId !== c.id);
+  save('questoes');
+}
+
+function ligarAoBanco(c, bancoId) {
+  c.bancoId = bancoId;
+  save('concursos');
+  renderAll();
+}
+
+async function criarBanco() {
+  const c = getActive();
+  if (!c) return;
+  if (!currentUid) { alert('Entre na sua conta primeiro.'); return; }
+  if (!confirm(`Criar um banco de questões compartilhado para "${c.nome}"?\n\nVocê receberá um código para passar a quem estuda o mesmo concurso.`)) return;
+  const codigo = novoCodigoBanco();
+  try {
+    await db.ref('bancos/' + codigo + '/meta').set({ criadoPor: currentUid, criadoEm: Date.now(), concurso: c.nome });
+    await moverPessoaisParaBanco(c, codigo);
+  } catch (err) { alert('Não foi possível criar o banco:\n' + msgErroBanco(err)); return; }
+  ligarAoBanco(c, codigo);
+}
+
+async function entrarBanco() {
+  const c = getActive();
+  if (!c) return;
+  if (!currentUid) { alert('Entre na sua conta primeiro.'); return; }
+  const codigo = (prompt('Cole o código do banco compartilhado:') || '').trim().toLowerCase();
+  if (!codigo) return;
+  if (!/^[a-z0-9]{6,32}$/.test(codigo)) { alert('Código inválido — ele tem só letras minúsculas e números.'); return; }
+  try {
+    const meta = await db.ref('bancos/' + codigo + '/meta').once('value');
+    if (!meta.exists()) { alert('Código não encontrado. Confira com quem criou o banco.'); return; }
+    await moverPessoaisParaBanco(c, codigo);
+  } catch (err) { alert('Não foi possível entrar no banco:\n' + msgErroBanco(err)); return; }
+  ligarAoBanco(c, codigo);
+}
+
+function copiarCodigoBanco() {
+  const c = getActive();
+  if (!c || !c.bancoId) return;
+  const fallback = () => prompt('Copie o código:', c.bancoId);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(c.bancoId).then(() => alert('Código copiado! Envie para quem estuda com você.'), fallback);
+  } else fallback();
+}
+
+function sairBanco() {
+  const c = getActive();
+  if (!c || !c.bancoId) return;
+  if (!confirm('Sair do banco compartilhado?\n\nAs questões continuam no banco para os outros. Você poderá voltar com o código.')) return;
+  delete c.bancoId;
+  save('concursos');
+  renderAll();
+}
+
+function renderBancoCard(c) {
+  const el = document.getElementById('qz-banco-card');
+  if (!c) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = c.bancoId
+    ? `<h2>👥 Banco compartilhado</h2>
+       <p class="hint">Este concurso usa um banco de questões em comum. Passe o código para quem estuda com você:</p>
+       <div class="banco-codigo"><code>${esc(c.bancoId)}</code>
+         <button class="btn-small" onclick="copiarCodigoBanco()">📋 Copiar</button>
+         <button class="btn-small btn-danger" onclick="sairBanco()">Sair do banco</button></div>
+       ${bancoErro ? `<p class="fonte-visita-alerta" style="margin-top:8px">⚠️ ${esc(bancoErro)}</p>` : ''}`
+    : `<h2>👥 Banco compartilhado</h2>
+       <p class="hint">Estuda o mesmo concurso com mais gente? Criem um banco em comum: todos importam e todos treinam com as mesmas questões. Seu desempenho (acertos e erros) continua só seu.</p>
+       <div class="quiz-config">
+         <button class="btn-primary" onclick="criarBanco()">+ Criar banco</button>
+         <button class="btn-small" onclick="entrarBanco()">Entrar com código</button>
+       </div>`;
 }
 
 /* ─── Telas do quiz ─── */
@@ -828,20 +1034,23 @@ function showQuizScreen(name) {
 }
 
 function renderQuiz() {
+  syncBanco();
   const c = getActive();
-  const qs = c ? cache.questoes.filter(q => q.concursoId === c.id) : [];
+  const qs = questoesDoConcurso(c);
+  renderBancoCard(c);
 
   document.getElementById('qz-total').textContent = qs.length;
-  const respondidas = qs.filter(q => (q.acertos || 0) + (q.erros || 0) > 0);
+  const respondidas = qs.filter(q => statOf(q).acertos + statOf(q).erros > 0);
   document.getElementById('qz-respondidas').textContent = respondidas.length;
-  const tA = qs.reduce((a, q) => a + (q.acertos || 0), 0);
-  const tT = qs.reduce((a, q) => a + (q.acertos || 0) + (q.erros || 0), 0);
+  const tA = qs.reduce((a, q) => a + statOf(q).acertos, 0);
+  const tT = qs.reduce((a, q) => a + statOf(q).acertos + statOf(q).erros, 0);
   document.getElementById('qz-acerto').textContent = tT ? Math.round(tA / tT * 100) + '%' : '—';
 
+  const materias = [...new Set(qs.map(q => q.materia))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const sel = document.getElementById('qz-livre-materia');
   const keep = sel.value;
   sel.innerHTML = '<option value="todas">Todas as matérias</option>' +
-    (c ? c.materias.map(m => `<option value="${m.id}">${esc(m.nome)}</option>`).join('') : '');
+    materias.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
   if (keep && [...sel.options].some(o => o.value === keep)) sel.value = keep;
 
   const hist = cache.simulados.filter(s => c && s.concursoId === c.id).slice(-5).reverse();
@@ -858,34 +1067,32 @@ function renderQuiz() {
     banco.innerHTML = '<p class="hint">Nenhuma questão ainda. Importe questões de provas antigas — peça ao Claude para converter o PDF de uma prova para o formato de importação!</p>';
     return;
   }
-  const grupos = c.materias.map(m => ({ m, qs: qs.filter(q => q.materiaId === m.id) })).filter(g => g.qs.length);
-  const orfas = qs.filter(q => !c.materias.some(m => m.id === q.materiaId));
-  banco.innerHTML = grupos.map(g => `
+  banco.innerHTML = materias.map(nome => {
+    const doGrupo = qs.filter(q => q.materia === nome);
+    return `
     <details class="qz-banco-mat">
-      <summary>${esc(g.m.nome)} — ${g.qs.length} questão(ões)</summary>
-      ${g.qs.map(q => `<div class="qz-banco-item">
+      <summary>${esc(nome)} — ${doGrupo.length} questão(ões)</summary>
+      ${doGrupo.map(q => `<div class="qz-banco-item">
         <span>${esc(q.enunciado.slice(0, 90))}${q.enunciado.length > 90 ? '…' : ''}</span>
-        <button class="btn-small btn-danger" onclick="delQuestao('${q.id}')">🗑</button>
+        ${podeExcluir(c, q) ? `<button class="btn-small btn-danger" onclick="delQuestao('${q.id}')">🗑</button>` : ''}
       </div>`).join('')}
-    </details>`).join('') +
-    (orfas.length ? `<details class="qz-banco-mat"><summary>Sem matéria — ${orfas.length}</summary>
-      ${orfas.map(q => `<div class="qz-banco-item"><span>${esc(q.enunciado.slice(0, 90))}</span>
-      <button class="btn-small btn-danger" onclick="delQuestao('${q.id}')">🗑</button></div>`).join('')}</details>` : '');
+    </details>`;
+  }).join('');
 }
 
 /* ─── Estudo livre ─── */
 function startLivre(idsOverride) {
   const c = getActive();
   if (!c) { alert('Cadastre um concurso primeiro.'); return; }
-  let pool = cache.questoes.filter(q => q.concursoId === c.id);
+  let pool = questoesDoConcurso(c).slice();
   if (idsOverride) {
     pool = pool.filter(q => idsOverride.includes(q.id));
   } else {
     const mat = document.getElementById('qz-livre-materia').value;
-    if (mat !== 'todas') pool = pool.filter(q => q.materiaId === mat);
+    if (mat !== 'todas') pool = pool.filter(q => q.materia === mat);
     const filtro = document.getElementById('qz-livre-filtro').value;
-    if (filtro === 'novas')   pool = pool.filter(q => !((q.acertos || 0) + (q.erros || 0)));
-    if (filtro === 'erradas') pool = pool.filter(q => q.ultimo === 'errado');
+    if (filtro === 'novas')   pool = pool.filter(q => statOf(q).acertos + statOf(q).erros === 0);
+    if (filtro === 'erradas') pool = pool.filter(q => statOf(q).ultimo === 'errado');
   }
   if (pool.length === 0) { alert('Nenhuma questão encontrada com esses filtros.'); return; }
   quiz = { modo: 'livre', pool: shuffle(pool.slice()), idx: 0, respostas: {}, respondida: false, acertos: 0, interval: null };
@@ -901,10 +1108,8 @@ function answerLivre(i) {
   quiz.respondida = true;
   const ok = i === q.correta;
   if (ok) quiz.acertos++;
-  q.acertos = (q.acertos || 0) + (ok ? 1 : 0);
-  q.erros   = (q.erros   || 0) + (ok ? 0 : 1);
-  q.ultimo  = ok ? 'certo' : 'errado';
-  save('questoes');
+  registrarResposta(q, ok);
+  save('qstats');
   renderQuizQuestion();
 }
 
@@ -925,7 +1130,7 @@ function finishLivre() {
 function startSimulado() {
   const c = getActive();
   if (!c) { alert('Cadastre um concurso primeiro.'); return; }
-  const todas = cache.questoes.filter(q => q.concursoId === c.id);
+  const todas = questoesDoConcurso(c);
   if (todas.length === 0) { alert('Importe questões primeiro.'); return; }
   const qtd = Math.min(parseInt(document.getElementById('qz-sim-qtd').value, 10) || 10, todas.length);
   const minutos = parseInt(document.getElementById('qz-sim-min').value, 10) || 0;
@@ -985,11 +1190,9 @@ function finishSimulado(force) {
     if (r === undefined) { erradas.push({ q, r: null }); return; }
     const ok = r === q.correta;
     if (ok) acertos++; else erradas.push({ q, r });
-    q.acertos = (q.acertos || 0) + (ok ? 1 : 0);
-    q.erros   = (q.erros   || 0) + (ok ? 0 : 1);
-    q.ultimo  = ok ? 'certo' : 'errado';
+    registrarResposta(q, ok);
   });
-  save('questoes');
+  save('qstats');
   cache.simulados.push({ id: genId(), concursoId: getActive().id, data: todayISO(), total: quiz.pool.length, acertos });
   save('simulados');
   showResult(acertos, quiz.pool.length, erradas);
@@ -998,11 +1201,9 @@ function finishSimulado(force) {
 /* ─── Questão na tela + resultado ─── */
 function renderQuizQuestion() {
   const q = quiz.pool[quiz.idx];
-  const c = getActive();
-  const mat = c.materias.find(m => m.id === q.materiaId);
   const LETRAS = 'ABCDE';
   document.getElementById('qz-progress').textContent = `Questão ${quiz.idx + 1} de ${quiz.pool.length}`;
-  document.getElementById('qz-q-materia').textContent = mat ? mat.nome : '';
+  document.getElementById('qz-q-materia').textContent = q.materia || '';
   document.getElementById('qz-q-enunciado').textContent = q.enunciado;
 
   const resp = quiz.respostas[q.id];
@@ -1047,9 +1248,8 @@ function showResult(acertos, total, erradas) {
   document.getElementById('qz-res-erradas').innerHTML = erradas.length === 0 ? '' :
     '<div class="section-header"><h2>Para revisar</h2></div>' +
     erradas.map(e => {
-      const mat = c.materias.find(m => m.id === e.q.materiaId);
       return `<div class="qz-errada-card">
-        <div class="quiz-materia">${esc(mat ? mat.nome : '')}</div>
+        <div class="quiz-materia">${esc(e.q.materia || '')}</div>
         <div class="quiz-enunciado">${esc(e.q.enunciado)}</div>
         <div class="qz-errada-resp">✗ Sua resposta: ${e.r === null ? 'em branco' : LETRAS[e.r] + ') ' + esc(e.q.alts[e.r])}</div>
         <div class="qz-errada-certa">✓ Correta: ${LETRAS[e.q.correta]}) ${esc(e.q.alts[e.q.correta])}</div>

@@ -28,10 +28,33 @@ O projeto Firebase **studycourse** já existe. Falta registrar o app web e colar
         ".read": "auth != null && auth.uid === $uid",
         ".write": "auth != null && auth.uid === $uid"
       }
+    },
+    "bancos": {
+      "$bancoId": {
+        ".read": "auth != null",
+        "meta": {
+          ".write": "auth != null && !data.exists()"
+        },
+        "questoes": {
+          "$qid": {
+            ".write": "auth != null && (data.exists() ? data.child('autor').val() === auth.uid : newData.child('autor').val() === auth.uid)",
+            ".validate": "newData.hasChildren(['autor', 'materia', 'enunciado', 'alts', 'correta'])"
+          }
+        }
+      }
     }
   }
 }
 ```
+
+### 👥 Banco de questões compartilhado
+Quem estuda o mesmo concurso pode dividir o banco de questões (aba **Quiz**):
+
+1. Uma pessoa clica em **+ Criar banco** e passa o **código** gerado para as outras
+2. As demais clicam em **Entrar com código** no mesmo concurso
+3. Qualquer um importa questões e todos passam a treinar com elas (questões repetidas são ignoradas)
+
+O desempenho (acertos, erros, "errei da última vez") é individual. Cada pessoa só exclui as questões que ela mesma importou. O código é o "segredo" do banco: quem tem o código lê e adiciona questões — não publique em lugar aberto. As regras acima são necessárias para o recurso funcionar.
 
 > ⚠️ Importante: a configuração no `app.js` precisa ter a linha `databaseURL` (aparece na aba **Dados** do Realtime Database, algo como `https://studycourse-xxxx-default-rtdb.firebaseio.com`).
 

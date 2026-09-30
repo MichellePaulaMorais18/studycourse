@@ -498,6 +498,14 @@ textarea { resize: vertical; }
 
 .quiz-nav { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
 
+.banco-codigo { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.banco-codigo code {
+  background: var(--bg); border: 1px solid var(--border);
+  padding: 6px 12px; border-radius: 8px;
+  font-size: 1rem; font-weight: 700; letter-spacing: 0.08em;
+  user-select: all;
+}
+
 details.qz-banco-mat {
   background: var(--card); border-radius: var(--radius);
   padding: 12px 16px; margin-bottom: 10px;
