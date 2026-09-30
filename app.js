@@ -1523,36 +1523,6 @@ function nomesTopico(c, id) {
   return null;
 }
 
-// Plano TCE-GO (B02): as trilhas DevOps, Dados, n8n e QA vêm dos roadmaps (roadmaps.js), um item por dia
-// ligado ao tópico do edital que o dia conclui; a trilha "Edital TCE-GO — lacunas" vem do documento
-// de integração (o que nenhuma trilha cobre).
-function planoTCE() {
-  const v = (materia, ...topicos) => topicos.map(topico => ({ materia, topico }));
-  const tudo = materia => [{ materia, topico: '*' }];
-  const SO = 'Sistemas Operacionais, Redes e Nuvem', SEG = 'Segurança da Informação';
-  const ES = 'Engenharia de Software', GOV = 'Governança de TI', LEG = 'Legislação Aplicada à TI';
-  return { studycourse: 'trilhas', versao: 1, trilhas: [
-    ...roadmapsComoTrilhas(),
-    { nome: 'Edital TCE-GO — lacunas', itens: [
-      { titulo: 'Engenharia de Software — fundamentos', nota: 'SOLID, Design Patterns, UML/BPMN, Scrum/Kanban/XP, requisitos',
-        vinculos: v(ES, 'Princípios SOLID, DRY, KISS e YAGNI; coesão e acoplamento', 'Modelagem com UML e BPMN', 'Padrões de projeto: criacionais, estruturais e comportamentais',
-          'Scrum, Kanban, Lean Software Development e XP', 'Requisitos funcionais e não funcionais: levantamento, especificação e gerenciamento', 'Histórias de usuário, casos de uso e critérios de aceite') },
-      { titulo: 'Governança de TI', nota: 'COBIT 2019, ITIL v4, ISO 38500, PMBOK, Lei do Governo Digital, ENGD', vinculos: tudo(GOV) },
-      { titulo: 'Legislação Aplicada à TI', nota: 'LGPD técnica, Marco Civil, certificação digital e normativos do TCE-GO (estudar direto no site do TCE-GO)', vinculos: tudo(LEG) },
-      { titulo: 'Segurança da Informação — parte ampla', nota: 'Criptografia, PKI, OWASP, Zero Trust, ISO 27000',
-        vinculos: v(SEG, 'Criptografia simétrica e assimétrica; ICP; certificados e assinatura digital', 'OWASP Top 10:2025; DevSecOps', 'Zero Trust', 'Família ABNT NBR ISO/IEC 27000') },
-      { titulo: 'Windows, PowerShell e Active Directory/LDAP', nota: 'Seu DevOps é todo Linux',
-        vinculos: v(SO, 'Windows e Linux: administração básica', 'Shell (Linux) e PowerShell; automação por scripts', 'Active Directory e LDAP') },
-      { titulo: 'Língua Inglesa técnica', nota: 'Leitura de documentação real do trabalho conta', vinculos: tudo('Língua Inglesa (Leitura Técnica)') },
-      { titulo: 'Conhecimentos Gerais — Língua Portuguesa', nota: '', vinculos: tudo('Língua Portuguesa') },
-      { titulo: 'Conhecimentos Gerais — Matemática e Raciocínio Lógico', nota: '', vinculos: tudo('Matemática e Raciocínio Lógico') },
-      { titulo: 'Conhecimentos Gerais — Legislação Institucional', nota: 'Lei Orgânica e Regimento Interno do TCE-GO: 1 sessão por semana, material denso', vinculos: tudo('Legislação Institucional') },
-      { titulo: 'Engenharia de Software assistida por IA — sistematizar a prática', nota: '2-3 sessões transformando o que você já faz no trabalho em anotação de estudo', vinculos: tudo('Eng. de Software com IA e Sistemas Agentivos') },
-      { titulo: 'Prova Discursiva — Estudo de Caso', nota: 'Treinar respostas técnicas objetivas dentro do limite de linhas, cronometrado', vinculos: [] }
-    ] }
-  ] };
-}
-
 // Mescla por nome: trilhas novas são criadas; em trilhas existentes só entram os itens que faltam.
 function aplicarTrilhas(c, dados) {
   const r = { trilhas: 0, itens: 0, vinculosOk: 0, vinculosFalha: 0 };
@@ -1593,32 +1563,6 @@ function resumoTrilhas(r) {
   return `✅ ${r.trilhas} trilha(s) nova(s) e ${r.itens} item(ns) adicionado(s).` +
     (r.vinculosOk ? `\n🔗 ${r.vinculosOk} ligação(ões) com tópicos do edital.` : '') +
     (r.vinculosFalha ? `\n⚠️ ${r.vinculosFalha} ligação(ões) não encontrada(s): a matéria ou o tópico tem nome diferente no seu edital. Ligue-as editando o item.` : '');
-}
-
-// A primeira versão do plano criava blocos por semanas; os itens por dia os substituem.
-// Só saem os blocos ainda não concluídos — o que você já marcou como feito continua (e seu crédito também).
-function removerBlocosAntigos(c) {
-  let removidos = 0, mantidos = 0;
-  trilhasDoConcurso(c).forEach(t => {
-    const antigos = (BLOCOS_ANTIGOS[t.nome] || []).map(normNome);
-    const antes = t.itens.length;
-    t.itens = t.itens.filter(i => !(antigos.includes(normNome(i.titulo)) && !i.feito));
-    removidos += antes - t.itens.length;
-    mantidos += t.itens.filter(i => antigos.includes(normNome(i.titulo))).length;
-  });
-  return { removidos, mantidos };
-}
-
-function carregarPlanoTCE() {
-  const c = getActive();
-  if (!c) { alert('Cadastre um concurso primeiro.'); return; }
-  const antigos = removerBlocosAntigos(c);
-  const r = aplicarTrilhas(c, planoTCE());
-  closeModal('modal-imp-trilhas');
-  renderAll();
-  alert(resumoTrilhas(r) +
-    (antigos.removidos ? `\n🧹 ${antigos.removidos} bloco(s) da versão anterior do plano foram substituídos pelos itens por dia.` : '') +
-    (antigos.mantidos ? `\n📌 ${antigos.mantidos} bloco(s) antigo(s) já concluído(s) foram mantidos para não perder seu progresso — pode excluí-los quando quiser.` : ''));
 }
 
 function parseTrilhasTexto(txt) {
@@ -1850,11 +1794,10 @@ function renderTrilhas() {
 
   if (ts.length === 0) {
     el.innerHTML = `<div class="empty-state"><div class="empty-icon">🧭</div>
-      <p>Nenhuma trilha ainda. Comece pelo plano montado a partir do seu documento de integração, ou crie as suas.</p>
+      <p>Nenhuma trilha ainda. Importe um arquivo de trilhas ou crie a sua do zero.</p>
       <div class="quiz-nav" style="justify-content:center">
-        <button class="btn-primary" onclick="carregarPlanoTCE()">🧭 Carregar plano TCE-GO (B02)</button>
+        <button class="btn-primary" onclick="openImportarTrilhas()">⬇ Importar trilhas</button>
         <button class="btn-small" onclick="openTrilhaModal()">+ Criar trilha</button>
-        <button class="btn-small" onclick="openImportarTrilhas()">⬇ Importar</button>
       </div></div>`;
     return;
   }
