@@ -1523,43 +1523,16 @@ function nomesTopico(c, id) {
   return null;
 }
 
-// Plano montado a partir do documento "Integração: Trilhas x Edital TCE-GO (B02 — TI)".
-// O documento traz o cruzamento trilha × edital, não o conteúdo semana a semana de cada trilha;
-// por isso os itens são blocos (ex.: "Semanas 5-11") ligados ao que o documento marca como coberto.
+// Plano TCE-GO (B02): as trilhas DevOps, Dados, n8n e QA vêm dos roadmaps (roadmaps.js), um item por dia
+// ligado ao tópico do edital que o dia conclui; a trilha "Edital TCE-GO — lacunas" vem do documento
+// de integração (o que nenhuma trilha cobre).
 function planoTCE() {
   const v = (materia, ...topicos) => topicos.map(topico => ({ materia, topico }));
   const tudo = materia => [{ materia, topico: '*' }];
-  const SO = 'Sistemas Operacionais, Redes e Nuvem', DEV = 'DevOps e Engenharia de Entrega', BD = 'Banco de Dados';
-  const IA = 'IA, Ciência de Dados e Automação', DS = 'Desenvolvimento de Sistemas', SEG = 'Segurança da Informação';
+  const SO = 'Sistemas Operacionais, Redes e Nuvem', SEG = 'Segurança da Informação';
   const ES = 'Engenharia de Software', GOV = 'Governança de TI', LEG = 'Legislação Aplicada à TI';
   return { studycourse: 'trilhas', versao: 1, trilhas: [
-    { nome: 'DevOps', itens: [
-      { titulo: 'Semanas 1-3 e 10 — Linux, redes e cloud', nota: 'Falta Windows/PowerShell/Active Directory — está na trilha "Edital TCE-GO"',
-        vinculos: v(SO, 'TCP/IP; IPv4 e IPv6; DNS e DHCP', 'HTTP/2, HTTP/3, HTTPS, SMTP, FTP e SSH', 'Nuvem: IaaS, PaaS, SaaS e serverless') },
-      { titulo: 'Semanas 5-11 — CI/CD, IaC, observabilidade, containers e Git', nota: 'Cobertura forte de DevOps e Engenharia de Entrega',
-        vinculos: v(DEV, 'CI/CD; pipelines; automação de build e testes', 'Infraestrutura como código e gerenciamento de configuração',
-          'Observabilidade: métricas, logs, traces, telemetria e alertas', 'Git distribuído; GitHub e GitLab', 'Branching: Git Flow e trunk-based development',
-          'Pull/merge requests e revisão de código', 'Docker e Docker Compose', 'Orquestração com Kubernetes',
-          'Ambientes de desenvolvimento, homologação e produção', 'GitHub Actions, GitLab CI/CD e Jenkins') }
-    ] },
-    { nome: 'Dados', itens: [
-      { titulo: 'Semanas 1, 8 e 9 — SQL, modelagem e ETL', nota: 'Falta administração de PostgreSQL/Oracle, NoSQL e bancos vetoriais',
-        vinculos: v(BD, 'Modelo entidade-relacionamento; normalização e desnormalização', 'SQL e álgebra relacional') },
-      { titulo: 'Semanas 2 e 5-7 — Ciência de dados e IA', nota: 'Falta IA generativa e ética em IA aplicada',
-        vinculos: v(IA, 'Ciência de dados: coleta, preparação, limpeza, transformação e análise', 'Estatística aplicada e avaliação de modelos',
-          'Aprendizado supervisionado, não supervisionado e por reforço') }
-    ] },
-    { nome: 'n8n', itens: [
-      { titulo: 'Semana 3 — Credenciais, webhooks e LGPD', nota: 'Cobre só a fatia de automação de Segurança da Informação — ligue aqui os tópicos que considerar cobertos', vinculos: [] },
-      { titulo: 'Semana 6 — APIs, OAuth2 e autenticação', nota: '',
-        vinculos: v(DS, 'APIs RESTful; GraphQL e WebSockets', 'Formatos JSON e XML', 'OAuth 2.0, OpenID Connect 1.0, tokens, claims e JWT') },
-      { titulo: 'Semanas 7, 8 e 10 — Self-hosting, escalabilidade e observabilidade', nota: 'Reforça a trilha DevOps',
-        vinculos: [...v(DEV, 'Observabilidade: métricas, logs, traces, telemetria e alertas'), ...v(SO, 'Escalabilidade, alta disponibilidade, integração local-nuvem e monitoramento')] }
-    ] },
-    { nome: 'QA', pausada: true, itens: [
-      { titulo: 'Semana 11 — Performance e automação de testes', nota: 'Trilha pausada até a prova: só essa fatia aparece no edital',
-        vinculos: v(ES, 'Testes: unitários, integração, funcionais, regressão, carga e estresse; automatizados') }
-    ] },
+    ...roadmapsComoTrilhas(),
     { nome: 'Edital TCE-GO — lacunas', itens: [
       { titulo: 'Engenharia de Software — fundamentos', nota: 'SOLID, Design Patterns, UML/BPMN, Scrum/Kanban/XP, requisitos',
         vinculos: v(ES, 'Princípios SOLID, DRY, KISS e YAGNI; coesão e acoplamento', 'Modelagem com UML e BPMN', 'Padrões de projeto: criacionais, estruturais e comportamentais',
@@ -1602,7 +1575,12 @@ function aplicarTrilhas(c, dados) {
         const achados = vn && vn.materia ? acharTopicos(c, vn.materia, vn.topico || '') : [];
         if (achados.length) { achados.forEach(x => ids.add(x.id)); r.vinculosOk++; } else r.vinculosFalha++;
       });
-      t.itens.push({ id: genId(), titulo, nota: typeof id.nota === 'string' ? id.nota : '', feito: false, feitoEm: '', vinculos: [...ids] });
+      t.itens.push({
+        id: genId(), titulo,
+        grupo: typeof id.grupo === 'string' ? id.grupo.trim() : '',
+        nota: typeof id.nota === 'string' ? id.nota : '',
+        feito: false, feitoEm: '', vinculos: [...ids]
+      });
       r.itens++;
     });
   });
@@ -1617,25 +1595,44 @@ function resumoTrilhas(r) {
     (r.vinculosFalha ? `\n⚠️ ${r.vinculosFalha} ligação(ões) não encontrada(s): a matéria ou o tópico tem nome diferente no seu edital. Ligue-as editando o item.` : '');
 }
 
+// A primeira versão do plano criava blocos por semanas; os itens por dia os substituem.
+// Só saem os blocos ainda não concluídos — o que você já marcou como feito continua (e seu crédito também).
+function removerBlocosAntigos(c) {
+  let removidos = 0, mantidos = 0;
+  trilhasDoConcurso(c).forEach(t => {
+    const antigos = (BLOCOS_ANTIGOS[t.nome] || []).map(normNome);
+    const antes = t.itens.length;
+    t.itens = t.itens.filter(i => !(antigos.includes(normNome(i.titulo)) && !i.feito));
+    removidos += antes - t.itens.length;
+    mantidos += t.itens.filter(i => antigos.includes(normNome(i.titulo))).length;
+  });
+  return { removidos, mantidos };
+}
+
 function carregarPlanoTCE() {
   const c = getActive();
   if (!c) { alert('Cadastre um concurso primeiro.'); return; }
+  const antigos = removerBlocosAntigos(c);
   const r = aplicarTrilhas(c, planoTCE());
   closeModal('modal-imp-trilhas');
   renderAll();
-  alert(resumoTrilhas(r));
+  alert(resumoTrilhas(r) +
+    (antigos.removidos ? `\n🧹 ${antigos.removidos} bloco(s) da versão anterior do plano foram substituídos pelos itens por dia.` : '') +
+    (antigos.mantidos ? `\n📌 ${antigos.mantidos} bloco(s) antigo(s) já concluído(s) foram mantidos para não perder seu progresso — pode excluí-los quando quiser.` : ''));
 }
 
 function parseTrilhasTexto(txt) {
   const trilhas = [];
-  let cur = null;
+  let cur = null, grupo = '';
   txt.split('\n').forEach(raw => {
     const l = raw.trim();
     if (!l) return;
     const m = l.match(/^\[(.+)\]$/);
-    if (m) { cur = { nome: m[1].trim(), itens: [] }; trilhas.push(cur); return; }
+    if (m) { cur = { nome: m[1].trim(), itens: [] }; trilhas.push(cur); grupo = ''; return; }
+    const g = l.match(/^##\s+(.+)$/);          // "## Semana 1 — Linux" agrupa os itens seguintes
+    if (g) { grupo = g[1].trim(); return; }
     if (!cur) { cur = { nome: 'Minha trilha', itens: [] }; trilhas.push(cur); }
-    cur.itens.push({ titulo: l.replace(/^([-*•]|\d+[\.\)])\s+/, ''), vinculos: [] });
+    cur.itens.push({ titulo: l.replace(/^([-*•]|\d+[\.\)])\s+/, ''), grupo, vinculos: [] });
   });
   return { studycourse: 'trilhas', trilhas };
 }
@@ -1681,7 +1678,7 @@ function exportarTrilhasJSON(c) {
     trilhas: trilhasDoConcurso(c).map(t => ({
       nome: t.nome,
       pausada: !!t.pausada,
-      itens: t.itens.map(i => ({ titulo: i.titulo, nota: i.nota || '', vinculos: i.vinculos.map(id => nomesTopico(c, id)).filter(Boolean) }))
+      itens: t.itens.map(i => ({ titulo: i.titulo, grupo: i.grupo || '', nota: i.nota || '', vinculos: i.vinculos.map(id => nomesTopico(c, id)).filter(Boolean) }))
     }))
   }, null, 2);
 }
@@ -1776,6 +1773,7 @@ function delItemTrilha(tid, iid) {
 }
 
 let tiSel = new Set();
+const gruposTrilha = {};   // chave "trilha|grupo" -> seção aberta? (só em memória)
 
 function openItemTrilhaModal(tid, iid) {
   const c = getActive();
@@ -1784,6 +1782,7 @@ function openItemTrilhaModal(tid, iid) {
   document.getElementById('ti-tid').value = tid;
   document.getElementById('ti-id').value = i ? i.id : '';
   document.getElementById('ti-titulo').value = i ? i.titulo : '';
+  document.getElementById('ti-grupo').value = i ? (i.grupo || '') : '';
   document.getElementById('ti-nota').value = i ? (i.nota || '') : '';
   document.getElementById('ti-busca').value = '';
   const existentes = new Set(c.materias.flatMap(m => m.topicos.map(t => t.id)));
@@ -1823,6 +1822,7 @@ function saveItemTrilha(e) {
   const id = document.getElementById('ti-id').value;
   const dados = {
     titulo: document.getElementById('ti-titulo').value.trim(),
+    grupo: document.getElementById('ti-grupo').value.trim(),
     nota: document.getElementById('ti-nota').value.trim(),
     vinculos: [...tiSel]
   };
@@ -1862,24 +1862,44 @@ function renderTrilhas() {
   el.innerHTML = ts.map(t => {
     const feitos = t.itens.filter(i => i.feito).length;
     const pct = t.itens.length ? Math.round(feitos / t.itens.length * 100) : 0;
+    const linhaItem = i => {
+      const ligados = i.vinculos.map(id => nomesTopico(c, id)).filter(Boolean);
+      const meta = [
+        ligados.length ? `<span title="${esc(ligados.map(x => x.materia + ' › ' + x.topico).join('\n'))}">🔗 ${ligados.length} tópico(s) do edital</span>` : '',
+        i.feito && i.feitoEm ? `concluído em ${fmtDate(i.feitoEm)}` : ''
+      ].filter(Boolean).join(' · ');
+      return `<div class="proc-etapa ${i.feito ? 'concluida' : 'pendente'}">
+        <button class="proc-etapa-ico" title="${i.feito ? 'Desmarcar' : 'Marcar como estudado'}" onclick="toggleItemTrilha('${t.id}','${i.id}')">${i.feito ? '✅' : '⬜'}</button>
+        <div class="proc-etapa-info">
+          <div class="proc-etapa-nome">${esc(i.titulo)}</div>
+          ${meta ? `<div class="sessao-meta">${meta}</div>` : ''}
+          ${i.nota ? `<div class="sessao-meta">📝 ${esc(i.nota)}</div>` : ''}
+        </div>
+        <button class="btn-small" onclick="openItemTrilhaModal('${t.id}','${i.id}')">✏️</button>
+        <button class="btn-small btn-danger" onclick="delItemTrilha('${t.id}','${i.id}')">🗑</button>
+      </div>`;
+    };
+
+    // Itens seguidos com o mesmo grupo (ex.: "Semana 5 — Docker") viram uma seção que abre e fecha.
+    // Sem escolha prévia, abre só a primeira seção que ainda tem item por fazer.
+    const secoes = [];
+    t.itens.forEach(i => {
+      const g = i.grupo || '';
+      const ultima = secoes[secoes.length - 1];
+      if (ultima && ultima.grupo === g) ultima.itens.push(i); else secoes.push({ grupo: g, itens: [i] });
+    });
+    const primeiraPendente = secoes.findIndex(s => s.grupo && s.itens.some(i => !i.feito));
     const itens = t.itens.length === 0
       ? '<p class="hint">Trilha vazia — adicione os itens que você vai estudar.</p>'
-      : t.itens.map(i => {
-          const ligados = i.vinculos.map(id => nomesTopico(c, id)).filter(Boolean);
-          const meta = [
-            ligados.length ? `<span title="${esc(ligados.map(x => x.materia + ' › ' + x.topico).join('\n'))}">🔗 ${ligados.length} tópico(s) do edital</span>` : '<span>sem tópicos do edital ligados</span>',
-            i.feito && i.feitoEm ? `concluído em ${fmtDate(i.feitoEm)}` : ''
-          ].filter(Boolean).join(' · ');
-          return `<div class="proc-etapa ${i.feito ? 'concluida' : 'pendente'}">
-            <button class="proc-etapa-ico" title="${i.feito ? 'Desmarcar' : 'Marcar como estudado'}" onclick="toggleItemTrilha('${t.id}','${i.id}')">${i.feito ? '✅' : '⬜'}</button>
-            <div class="proc-etapa-info">
-              <div class="proc-etapa-nome">${esc(i.titulo)}</div>
-              <div class="sessao-meta">${meta}</div>
-              ${i.nota ? `<div class="sessao-meta">📝 ${esc(i.nota)}</div>` : ''}
-            </div>
-            <button class="btn-small" onclick="openItemTrilhaModal('${t.id}','${i.id}')">✏️</button>
-            <button class="btn-small btn-danger" onclick="delItemTrilha('${t.id}','${i.id}')">🗑</button>
-          </div>`;
+      : secoes.map((s, n) => {
+          if (!s.grupo) return s.itens.map(linhaItem).join('');
+          const chave = t.id + '|' + s.grupo;
+          const aberta = chave in gruposTrilha ? gruposTrilha[chave] : n === primeiraPendente;
+          const feitosG = s.itens.filter(i => i.feito).length;
+          return `<details class="trilha-grupo" ${aberta ? 'open' : ''} data-chave="${esc(chave)}" ontoggle="gruposTrilha[this.dataset.chave] = this.open">
+            <summary>${feitosG === s.itens.length ? '✅ ' : ''}${esc(s.grupo)} <span class="trilha-grupo-cont">${feitosG}/${s.itens.length}</span></summary>
+            ${s.itens.map(linhaItem).join('')}
+          </details>`;
         }).join('');
     return `<div class="materia-card ${t.aberta ? 'open' : ''} ${t.pausada ? 'trilha-pausada' : ''}">
       <div class="materia-header" onclick="toggleTrilha('${t.id}')">

@@ -66,7 +66,7 @@ Abra o `index.html` no navegador (ou publique no GitHub Pages) e entre com sua c
 - **Etapas**: acompanhe em qual fase o concurso está (inscrições, prova, resultado...)
 - **Matérias**: cole os tópicos do edital, um por linha; clique no tópico para marcar ⬜ → ✅ estudado → 🔁 revisado
 - **Estudos**: use o cronômetro ou registre manualmente o tempo estudado por matéria
-- **Trilhas**: suas trilhas de estudo divididas em itens; cada item pode ser ligado a tópicos do edital e, ao ser concluído, esses tópicos contam como estudados no progresso das matérias (sem apagar o que você marcou à mão). Dá para exportar/importar e carregar o plano TCE-GO (B02)
+- **Trilhas**: suas trilhas de estudo divididas em itens; cada item pode ser ligado a tópicos do edital e, ao ser concluído, esses tópicos contam como estudados no progresso das matérias (sem apagar o que você marcou à mão). Dá para exportar/importar e carregar o plano TCE-GO (B02): os 4 roadmaps (DevOps, Dados, n8n e QA) com um item por dia, agrupados por semana (dados em `roadmaps.js`)
 - **Quiz**: banco de questões com estudo livre e simulado; pode ser compartilhado por concurso (veja "Banco compartilhado")
 - **Radar**: sites e órgãos para conferir concursos, com registro da última visita
 - **Trainee**: processos seletivos de trainee (empresa, vaga, prazo de inscrição, situação e etapas), com agenda dos próximos compromissos

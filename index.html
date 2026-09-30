@@ -438,6 +438,8 @@
       <input type="hidden" id="ti-id" />
       <label>O que você estuda neste item? *</label>
       <input id="ti-titulo" required placeholder="Ex.: Semana 5 — Pipelines de CI/CD" />
+      <label>Semana / grupo (opcional)</label>
+      <input id="ti-grupo" placeholder="Ex.: Semana 5 — Introdução a Docker" />
       <label>Anotações</label>
       <input id="ti-nota" placeholder="Link do material, onde parou... (opcional)" />
       <label>Tópicos do edital que este item cobre</label>
@@ -472,12 +474,12 @@
       <label>Arquivo exportado (.json)</label>
       <input id="imp-trilhas-arquivo" type="file" accept=".json,application/json,text/plain" onchange="lerArquivoTrilhas(this)" />
       <label>ou cole um texto</label>
-      <textarea id="imp-trilhas-texto" rows="8" placeholder="Pode ser o texto exportado, ou uma lista simples:&#10;&#10;[DevOps]&#10;Semana 1 — Linux básico&#10;Semana 2 — Redes&#10;&#10;[Dados]&#10;Semana 1 — SQL"></textarea>
-      <p class="hint">Em lista simples, <b>[Nome]</b> começa uma trilha e cada linha é um item (você liga os tópicos do edital depois, editando o item). Trilhas e itens que já existem não são duplicados.</p>
+      <textarea id="imp-trilhas-texto" rows="8" placeholder="Pode ser o texto exportado, ou uma lista simples:&#10;&#10;[DevOps]&#10;## Semana 1 — Linux&#10;Seg — Comandos básicos&#10;Ter — Permissões&#10;## Semana 2 — Redes&#10;Seg — TCP/IP"></textarea>
+      <p class="hint">Em lista simples, <b>[Nome]</b> começa uma trilha, <b>## Título</b> começa uma semana/grupo (opcional) e cada linha é um item (você liga os tópicos do edital depois, editando o item). Trilhas e itens que já existem não são duplicados.</p>
       <button class="btn-primary" type="submit">Importar</button>
     </form>
     <div class="trilha-plano">
-      <p class="hint">Ou comece pelo plano montado a partir do seu documento de integração:</p>
+      <p class="hint">Ou carregue o plano pronto: seus 4 roadmaps (DevOps, Dados, n8n e QA), um item por dia, ligados ao edital, mais as lacunas do documento de integração:</p>
       <button class="btn-small" type="button" onclick="carregarPlanoTCE()">🧭 Carregar plano TCE-GO (B02)</button>
     </div>
   </div>
@@ -603,6 +605,7 @@
   </div>
 </div>
 
+<script src="roadmaps.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

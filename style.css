@@ -379,6 +379,9 @@ main { max-width: 900px; margin: 0 auto; padding: 16px; }
 /* ═══ TRILHAS ═══ */
 .via-trilha { margin-left: auto; font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
 .trilha-pausada { opacity: 0.75; }
+details.trilha-grupo { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 4px; }
+details.trilha-grupo > summary { cursor: pointer; font-size: 0.88rem; font-weight: 700; padding: 8px 0; }
+.trilha-grupo-cont { font-weight: 400; color: var(--muted); font-size: 0.78rem; margin-left: 4px; }
 .trilha-plano { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border); }
 .ti-lista { max-height: 38vh; overflow-y: auto; margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; }
 details.ti-mat { padding: 4px 0; }
