@@ -67,6 +67,7 @@ Abra o `index.html` no navegador (ou publique no GitHub Pages) e entre com sua c
 - **Matérias**: cole os tópicos do edital, um por linha; clique no tópico para marcar ⬜ → ✅ estudado → 🔁 revisado
 - **Estudos**: use o cronômetro ou registre manualmente o tempo estudado por matéria
 - **Trilhas**: suas trilhas de estudo divididas em itens; cada item pode ser ligado a tópicos do edital e, ao ser concluído, esses tópicos contam como estudados no progresso das matérias (sem apagar o que você marcou à mão). As trilhas não vêm prontas no app: cada pessoa importa o **seu** arquivo `.json` (ou cola uma lista simples) em Trilhas → Importar, e os dados ficam só na conta dela. Itens podem ser agrupados por semana
+- **Compartilhar com colegas** (Meus concursos → 📤 Compartilhar): gera um pacote com o cadastro do concurso, etapas, matérias, processos seletivos e Radar, escolhendo o que vai. Leva só a estrutura: nunca a sua situação nas etapas e nos processos, o progresso de estudo, as questões respondidas, as trilhas nem o código do banco. Quem recebe usa 📥 Importar e começa do zero
 - **Quiz**: banco de questões com estudo livre e simulado; pode ser compartilhado por concurso (veja "Banco compartilhado")
 - **Radar**: sites e órgãos para conferir concursos, com registro da última visita
 - **Trainee**: processos seletivos de trainee (empresa, vaga, prazo de inscrição, situação e etapas), com agenda dos próximos compromissos

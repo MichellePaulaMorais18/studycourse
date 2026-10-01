@@ -376,6 +376,16 @@ main { max-width: 900px; margin: 0 auto; padding: 16px; }
 .status-badge.andamento { background: rgba(59,130,246,0.15); color: var(--blue); }
 .status-badge.encerrado { background: var(--border); color: var(--muted); }
 
+/* ═══ COMPARTILHAR PACOTE ═══ */
+.pk-grupo { font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 14px 0 4px; }
+.modal-box label.pk-op {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin: 0; padding: 5px 0; font-size: 0.88rem; font-weight: 400; color: var(--text); cursor: pointer;
+}
+.pk-op input { width: auto; margin-top: 3px; flex-shrink: 0; }
+.pk-op small { display: block; color: var(--muted); font-size: 0.75rem; line-height: 1.35; }
+#pk-texto { margin-top: 12px; font-size: 0.75rem; font-family: ui-monospace, Consolas, monospace; }
+
 /* ═══ TRILHAS ═══ */
 .via-trilha { margin-left: auto; font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
 .trilha-pausada { opacity: 0.75; }

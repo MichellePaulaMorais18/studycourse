@@ -78,6 +78,8 @@
     <button onclick="setView('fontes');closeDrawer()">🔭 Radar (concursos e empresas)</button>
     <button onclick="setView('processos');closeDrawer()">💼 Processos seletivos (trainee)</button>
     <button onclick="setView('concursos');closeDrawer()">🏛️ Meus concursos</button>
+    <button onclick="openExportarPacote();closeDrawer()">📤 Compartilhar com colegas</button>
+    <button onclick="openImportarPacote();closeDrawer()">📥 Importar de um colega</button>
     <hr />
     <button onclick="toggleDark()">🌙 Tema claro/escuro</button>
     <button onclick="signOutApp()">🚪 Sair</button>
@@ -320,7 +322,11 @@
   <section id="view-concursos" style="display:none">
     <div class="section-header">
       <h2>Meus concursos</h2>
-      <button class="btn-primary" onclick="openConcursoModal()">+ Concurso</button>
+      <div>
+        <button class="btn-small" onclick="openExportarPacote()">📤 Compartilhar</button>
+        <button class="btn-small" onclick="openImportarPacote()">📥 Importar</button>
+        <button class="btn-primary" onclick="openConcursoModal()">+ Concurso</button>
+      </div>
     </div>
     <div id="concursos-list"></div>
   </section>
@@ -411,6 +417,38 @@
       <label>Anotações</label>
       <input id="s-obs" placeholder="O que você estudou? (opcional)" />
       <button class="btn-primary" type="submit">Salvar</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ MODAL: COMPARTILHAR PACOTE ═══ -->
+<div class="modal" id="modal-pacote-exp">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-pacote-exp')">✕</button>
+    <h2>Compartilhar com colegas</h2>
+    <p class="hint">Escolha o que enviar. O texto abaixo é <b>exatamente</b> o que a outra pessoa vai receber.</p>
+    <div id="pk-opcoes"></div>
+    <textarea id="pk-texto" rows="7" readonly onclick="this.select()"></textarea>
+    <p class="hint" id="pk-resumo"></p>
+    <div class="quiz-nav">
+      <button class="btn-primary" type="button" onclick="copiarPacote()">📋 Copiar</button>
+      <button class="btn-small" type="button" onclick="baixarPacote()">💾 Baixar arquivo</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: IMPORTAR PACOTE ═══ -->
+<div class="modal" id="modal-pacote-imp">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-pacote-imp')">✕</button>
+    <h2>Importar de um colega</h2>
+    <form onsubmit="importarPacote(event)">
+      <label>Arquivo recebido (.json)</label>
+      <input id="pk-imp-arquivo" type="file" accept=".json,application/json,text/plain" onchange="lerArquivoPacote(this)" />
+      <label>ou cole o texto recebido</label>
+      <textarea id="pk-imp-texto" rows="8" placeholder='{"studycourse": "pacote", ...}'></textarea>
+      <p class="hint">Entra só o que veio no pacote. O que você já tem não é duplicado nem sobrescrito, e tudo o que for novo começa sem progresso: etapas pendentes e processos como "quero me inscrever".</p>
+      <button class="btn-primary" type="submit">Importar</button>
     </form>
   </div>
 </div>

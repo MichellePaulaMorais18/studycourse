@@ -478,19 +478,10 @@ function lerArquivoMaterias(input) {
 }
 
 // Mescla por nome (sem diferenciar caixa): cria matérias novas e só acrescenta tópicos que faltam.
-function importarMaterias(e) {
-  e.preventDefault();
-  const c = getActive();
-  let dados;
-  try { dados = JSON.parse(document.getElementById('imp-materias-texto').value); }
-  catch (_) { alert('Não consegui ler esse texto. Cole exatamente o que foi exportado pelo app.'); return; }
-  if (!dados || dados.studycourse !== 'materias' || !Array.isArray(dados.materias)) {
-    alert('Esse texto não parece uma exportação de matérias do StudyCourse.');
-    return;
-  }
-
+// Nunca mexe no progresso de tópicos que já existem.
+function mesclarMaterias(c, lista) {
   let novasMaterias = 0, novosTopicos = 0;
-  dados.materias.forEach(item => {
+  lista.forEach(item => {
     const nome = typeof item.nome === 'string' ? item.nome.trim() : '';
     if (!nome) return;
     let m = c.materias.find(x => x.nome.trim().toLowerCase() === nome.toLowerCase());
@@ -508,6 +499,21 @@ function importarMaterias(e) {
       novosTopicos++;
     });
   });
+  return { novasMaterias, novosTopicos };
+}
+
+function importarMaterias(e) {
+  e.preventDefault();
+  const c = getActive();
+  let dados;
+  try { dados = JSON.parse(document.getElementById('imp-materias-texto').value); }
+  catch (_) { alert('Não consegui ler esse texto. Cole exatamente o que foi exportado pelo app.'); return; }
+  if (!dados || dados.studycourse !== 'materias' || !Array.isArray(dados.materias)) {
+    alert('Esse texto não parece uma exportação de matérias do StudyCourse.');
+    return;
+  }
+
+  const { novasMaterias, novosTopicos } = mesclarMaterias(c, dados.materias);
 
   save('concursos');
   closeModal('modal-imp-materias');
@@ -2158,6 +2164,240 @@ function renderProcessos() {
       </div>
     </div>`;
   }).join('');
+}
+
+/* ══════════════════════════════════
+   COMPARTILHAR COM COLEGAS (PACOTE)
+══════════════════════════════════ */
+// O pacote leva só a ESTRUTURA do concurso, dos processos e do Radar. Nunca vai: situação das etapas
+// (qual é a atual/concluída), situação dos processos (inscrito, aprovado...), progresso nos tópicos,
+// horas de estudo, questões respondidas, trilhas, código do banco compartilhado e datas de visita.
+// Anotações só vão se a pessoa marcar, porque podem ter contatos e logins.
+
+const dataIso = s => (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s.trim()) ? s.trim() : '');
+const textoCurto = (s, max = 500) => (typeof s === 'string' ? s.trim().slice(0, max) : '');
+
+function copiarTextoDe(textarea, mensagem) {
+  const ok = () => alert(mensagem);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(textarea.value).then(ok, () => { textarea.select(); document.execCommand('copy'); ok(); });
+  } else { textarea.select(); document.execCommand('copy'); ok(); }
+}
+
+function baixarTexto(texto, nomeArquivo) {
+  const blob = new Blob([texto], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = nomeArquivo;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function openExportarPacote() {
+  const c = getActive();
+  const op = (id, rotulo, detalhe, marcado = true, nivel = 0) =>
+    `<label class="pk-op" style="margin-left:${nivel * 22}px"><input type="checkbox" id="${id}" ${marcado ? 'checked' : ''} onchange="atualizarPacote()" />
+      <span>${rotulo}<small>${detalhe}</small></span></label>`;
+  let html = '';
+  if (c) {
+    html += `<div class="pk-grupo">🏛️ Concurso ativo</div>`;
+    html += op('pk-concurso', esc(c.nome), 'nome, órgão, cargo, banca, data da prova, link do edital e situação do concurso');
+    if (c.etapas.length) html += op('pk-etapas', `Etapas do concurso (${c.etapas.length})`, 'nomes e datas — nunca qual é a atual ou concluída', true, 1);
+    if (c.materias.length) html += op('pk-materias', `Matérias e tópicos do edital (${c.materias.length})`, 'sem o seu progresso de estudo', true, 1);
+  } else {
+    html += '<p class="hint">Cadastre um concurso para poder compartilhá-lo.</p>';
+  }
+  if (cache.processos.length) {
+    html += `<div class="pk-grupo">💼 Processos seletivos</div>`;
+    html += cache.processos.map(p => `<label class="pk-op"><input type="checkbox" class="pk-proc" data-id="${p.id}" checked onchange="atualizarPacote()" />
+      <span>${esc(p.empresa)}${p.vaga ? ' — ' + esc(p.vaga) : ''}<small>empresa, vaga, link, prazo de inscrição e nomes das etapas — sem a sua situação</small></span></label>`).join('');
+    html += op('pk-datas-proc', 'Incluir as datas das etapas dos processos', 'desmarcado por padrão: datas de entrevista costumam ser só suas', false, 1);
+  }
+  const nC = cache.fontes.filter(f => tipoDe(f) === 'concursos').length, nE = cache.fontes.filter(f => tipoDe(f) === 'empresas').length;
+  if (nC || nE) {
+    html += `<div class="pk-grupo">🔭 Radar</div>`;
+    if (nC) html += op('pk-radar-concursos', `Lugares de concursos (${nC})`, 'nome e link — sem a data da sua última visita');
+    if (nE) html += op('pk-radar-empresas', `Empresas (${nE})`, 'nome e página de carreiras — sem a data da sua última visita');
+  }
+  if (cache.processos.length || nC || nE) {
+    html += `<div class="pk-grupo">📝 Anotações</div>`;
+    html += op('pk-obs', 'Incluir minhas anotações dos processos e do Radar', 'desmarcado por padrão: podem ter contatos, logins e outros dados pessoais', false);
+  }
+  document.getElementById('pk-opcoes').innerHTML = html;
+  atualizarPacote();
+  openModal('modal-pacote-exp');
+}
+
+function gerarPacote() {
+  const marcado = id => { const el = document.getElementById(id); return !!(el && el.checked && !el.disabled); };
+  const c = getActive();
+  const pk = { studycourse: 'pacote', versao: 1 };
+  if (c && marcado('pk-concurso')) {
+    pk.concurso = { nome: c.nome, orgao: c.orgao || '', cargo: c.cargo || '', banca: c.banca || '', dataProva: c.dataProva || '', editalLink: c.editalLink || '', status: c.status || 'publicado' };
+    if (marcado('pk-etapas')) pk.concurso.etapas = c.etapas.map(e => ({ nome: e.nome, data: e.data || '' }));
+    if (marcado('pk-materias')) pk.concurso.materias = c.materias.map(m => ({ nome: m.nome, topicos: m.topicos.map(t => t.nome) }));
+  }
+  const comDatas = marcado('pk-datas-proc'), comObs = marcado('pk-obs');
+  const procs = [...document.querySelectorAll('.pk-proc:checked')].map(el => getProc(el.dataset.id)).filter(Boolean);
+  if (procs.length) {
+    pk.processos = procs.map(p => {
+      const o = { empresa: p.empresa, vaga: p.vaga || '', link: p.link || '', prazo: p.prazo || '',
+        etapas: p.etapas.map(e => (comDatas ? { nome: e.nome, data: e.data || '' } : { nome: e.nome })) };
+      if (comObs && p.obs) o.obs = p.obs;
+      return o;
+    });
+  }
+  const radar = [];
+  ['concursos', 'empresas'].forEach(t => {
+    if (!marcado('pk-radar-' + t)) return;
+    cache.fontes.filter(f => tipoDe(f) === t).forEach(f => {
+      const o = { tipo: t, nome: f.nome, link: f.link || '' };
+      if (comObs && f.obs) o.obs = f.obs;
+      radar.push(o);
+    });
+  });
+  if (radar.length) pk.radar = radar;
+  return pk;
+}
+
+function atualizarPacote() {
+  // Itens "filhos" ficam desativados quando o concurso não vai junto
+  const concurso = document.getElementById('pk-concurso');
+  ['pk-etapas', 'pk-materias'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !(concurso && concurso.checked); });
+  const pk = gerarPacote();
+  const partes = [];
+  if (pk.concurso) partes.push(`concurso "${pk.concurso.nome}"` + (pk.concurso.etapas ? `, ${pk.concurso.etapas.length} etapa(s)` : '') + (pk.concurso.materias ? `, ${pk.concurso.materias.length} matéria(s)` : ''));
+  if (pk.processos) partes.push(`${pk.processos.length} processo(s)`);
+  if (pk.radar) partes.push(`${pk.radar.length} lugar(es) no Radar`);
+  const vazio = partes.length === 0;
+  document.getElementById('pk-texto').value = vazio ? '' : JSON.stringify(pk, null, 2);
+  document.getElementById('pk-resumo').innerHTML = vazio
+    ? 'Marque ao menos uma opção.'
+    : `Vai: ${esc(partes.join(' · '))}.<br>Nunca vai: sua situação nas etapas e nos processos, progresso de estudo, horas, questões, trilhas e o código do banco de questões.`;
+}
+
+function copiarPacote() {
+  const ta = document.getElementById('pk-texto');
+  if (!ta.value) { alert('Marque ao menos uma opção para compartilhar.'); return; }
+  copiarTextoDe(ta, 'Texto copiado! Envie para o colega colar em "Importar de um colega".');
+}
+
+function baixarPacote() {
+  const ta = document.getElementById('pk-texto');
+  if (!ta.value) { alert('Marque ao menos uma opção para compartilhar.'); return; }
+  const c = getActive();
+  const slug = (c ? c.nome : 'pacote').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'pacote';
+  baixarTexto(ta.value, `compartilhar-${slug}.json`);
+}
+
+function openImportarPacote() {
+  document.getElementById('pk-imp-texto').value = '';
+  document.getElementById('pk-imp-arquivo').value = '';
+  openModal('modal-pacote-imp');
+}
+
+function lerArquivoPacote(input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => { document.getElementById('pk-imp-texto').value = reader.result; };
+  reader.readAsText(f);
+}
+
+// Mescla sem duplicar e sem sobrescrever: o que a pessoa já tem fica como está (só campos vazios são
+// preenchidos), e tudo o que é novo nasce sem progresso (etapas pendentes, processos "quero me inscrever").
+function aplicarPacote(d) {
+  const r = { concursoNovo: false, concursoMesclado: false, etapas: 0, materias: 0, topicos: 0, processos: 0, lugares: 0 };
+
+  const dc = d.concurso;
+  if (dc && typeof dc.nome === 'string' && dc.nome.trim()) {
+    const nome = textoCurto(dc.nome, 200);
+    let c = cache.concursos.find(x => normNome(x.nome) === normNome(nome));
+    if (!c) {
+      const statusValido = Object.prototype.hasOwnProperty.call(STATUS_CONCURSO, dc.status);   // `in`/[] aceitariam "__proto__"
+      c = { id: genId(), nome, orgao: '', cargo: '', banca: '', status: statusValido ? dc.status : 'publicado', dataProva: '', editalLink: '', etapas: [], materias: [] };
+      cache.concursos.push(c);
+      cache.settings.activeId = c.id;
+      save('settings');
+      r.concursoNovo = true;
+    } else {
+      r.concursoMesclado = true;
+    }
+    [['orgao', 200], ['cargo', 200], ['banca', 200], ['editalLink', 500]].forEach(([k, max]) => { if (!c[k]) c[k] = textoCurto(dc[k], max); });
+    if (!c.dataProva) c.dataProva = dataIso(dc.dataProva);
+
+    (Array.isArray(dc.etapas) ? dc.etapas.slice(0, 200) : []).forEach(e => {
+      const en = textoCurto(e && e.nome, 200);
+      if (!en) return;
+      const ja = c.etapas.find(x => normNome(x.nome) === normNome(en));
+      if (ja) { if (!ja.data) ja.data = dataIso(e.data); return; }
+      c.etapas.push({ id: genId(), nome: en, data: dataIso(e.data), status: 'pendente' });
+      r.etapas++;
+    });
+    if (Array.isArray(dc.materias)) {
+      const m = mesclarMaterias(c, dc.materias.slice(0, 200).map(x => ({ nome: textoCurto(x && x.nome, 200), topicos: Array.isArray(x && x.topicos) ? x.topicos.slice(0, 500).map(t => textoCurto(t, 500)) : [] })));
+      r.materias = m.novasMaterias; r.topicos = m.novosTopicos;
+    }
+    save('concursos');
+  }
+
+  (Array.isArray(d.processos) ? d.processos.slice(0, 200) : []).forEach(pd => {
+    const empresa = textoCurto(pd && pd.empresa, 200);
+    if (!empresa) return;
+    const vaga = textoCurto(pd.vaga, 200);
+    let p = cache.processos.find(x => normNome(x.empresa) === normNome(empresa) && normNome(x.vaga || '') === normNome(vaga));
+    const novo = !p;
+    if (novo) {
+      p = { id: genId(), empresa, vaga, link: '', status: 'interesse', prazo: '', obs: '', etapas: [] };
+      cache.processos.push(p);
+      r.processos++;
+    }
+    if (!p.link) p.link = textoCurto(pd.link, 500);
+    if (!p.prazo) p.prazo = dataIso(pd.prazo);
+    if (novo && pd.obs) p.obs = textoCurto(pd.obs, 1000);
+    (Array.isArray(pd.etapas) ? pd.etapas.slice(0, 100) : []).forEach(e => {
+      const en = textoCurto(e && e.nome, 200);
+      if (!en || p.etapas.some(x => normNome(x.nome) === normNome(en))) return;
+      p.etapas.push({ id: genId(), nome: en, data: dataIso(e.data), status: 'pendente', obs: '' });
+    });
+  });
+  if (r.processos || (Array.isArray(d.processos) && d.processos.length)) save('processos');
+
+  (Array.isArray(d.radar) ? d.radar.slice(0, 500) : []).forEach(fd => {
+    const nome = textoCurto(fd && fd.nome, 200);
+    if (!nome) return;
+    const tipo = fd.tipo === 'empresas' ? 'empresas' : 'concursos';
+    if (cache.fontes.some(x => tipoDe(x) === tipo && normNome(x.nome) === normNome(nome))) return;
+    cache.fontes.push({ id: genId(), tipo, nome, link: textoCurto(fd.link, 500), obs: textoCurto(fd.obs, 1000), ultimaVisita: '' });
+    r.lugares++;
+  });
+  if (r.lugares) save('fontes');
+  return r;
+}
+
+function importarPacote(e) {
+  e.preventDefault();
+  const txt = document.getElementById('pk-imp-texto').value.trim();
+  if (!txt) { alert('Cole o texto recebido ou escolha o arquivo.'); return; }
+  let d;
+  try { d = JSON.parse(txt); } catch (_) { alert('Não consegui ler esse texto. Cole exatamente o que o colega enviou.'); return; }
+  if (!d || d.studycourse !== 'pacote' || !(d.concurso || d.processos || d.radar)) {
+    alert('Esse texto não parece um pacote de compartilhamento do StudyCourse.');
+    return;
+  }
+  const r = aplicarPacote(d);
+  closeModal('modal-pacote-imp');
+  renderAll();
+  const linhas = [];
+  if (r.etapas) linhas.push(`🗓️ ${r.etapas} etapa(s) do concurso (todas pendentes).`);
+  if (r.materias || r.topicos) linhas.push(`📖 ${r.materias} matéria(s) e ${r.topicos} tópico(s).`);
+  if (r.processos) linhas.push(`💼 ${r.processos} processo(s) seletivo(s) (como "quero me inscrever").`);
+  if (r.lugares) linhas.push(`🔭 ${r.lugares} lugar(es) no Radar.`);
+  if (r.concursoNovo) linhas.unshift('🏛️ Concurso criado e selecionado.');
+  else if (r.concursoMesclado && linhas.length) linhas.unshift('🏛️ Você já tinha esse concurso: só acrescentei o que faltava.');
+  alert(linhas.length ? '✅ Importado!\n' + linhas.join('\n') : 'Nada novo: você já tinha tudo o que veio nesse pacote.');
 }
 
 /* ══════════════════════════════════
