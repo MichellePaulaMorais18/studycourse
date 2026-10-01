@@ -192,6 +192,7 @@ function setView(v) {
     if (tab) tab.classList.toggle('active', x === v);
   });
   renderConcursoSelect(); // o Radar é geral — a barra de concurso some nele
+  if (v === 'fontes') renderFontes();   // o contador de processos por empresa pode ter mudado
 }
 
 function openDrawer()  { document.getElementById('side-drawer').classList.add('open'); document.getElementById('drawer-overlay').classList.add('show'); }
@@ -1420,13 +1421,47 @@ function diasDesde(iso) {
   return Math.round((now - ref) / 86400000);
 }
 
+// O Radar tem duas áreas. Lugares cadastrados antes de existir o campo `tipo` contam como concursos.
+const TIPOS_FONTE = {
+  concursos: {
+    aba: '🏛️ Concursos', titulo: 'Novo lugar', abrir: 'Abrir site',
+    hint: 'Anote sites, órgãos e bancas onde sempre aparecem concursos. Ao conferir um deles, clique em "Visitei hoje" — a lista mostra primeiro os que estão há mais tempo sem visita.',
+    vazio: 'Nenhum lugar anotado ainda. Adicione sites de notícias de concursos, órgãos que você acompanha, bancas...',
+    nome: 'Nome *', nomePh: 'Ex.: PCI Concursos, site do TCE-GO, Prefeitura de Goiânia...',
+    link: 'Link', obsPh: 'Ex.: costuma abrir concurso no fim do ano (opcional)'
+  },
+  empresas: {
+    aba: '🏢 Empresas', titulo: 'Nova empresa', abrir: 'Página de carreiras',
+    hint: 'Deixe aqui as empresas que fazem processos seletivos e trainee. Confira a página de carreiras de tempos em tempos e, quando abrir uma vaga, use "Novo processo" para acompanhar as etapas na aba Trainee.',
+    vazio: 'Nenhuma empresa ainda. Adicione as empresas que você quer acompanhar (Ambev, Itaú, Vale...) com o link da página de carreiras.',
+    nome: 'Empresa *', nomePh: 'Ex.: Ambev, Itaú, Vale...',
+    link: 'Página de carreiras', obsPh: 'Ex.: abre trainee em março; exige inglês (opcional)'
+  }
+};
+let fonteTipo = 'concursos';
+const tipoDe = f => (f.tipo === 'empresas' ? 'empresas' : 'concursos');
+
+function setFonteTipo(t) { fonteTipo = t; renderFontes(); }
+
+// Rótulos e exemplos do formulário acompanham a área escolhida.
+function atualizarCamposFonte() {
+  const T = TIPOS_FONTE[document.getElementById('f-tipo').value];
+  document.getElementById('f-nome-label').textContent = T.nome;
+  document.getElementById('f-nome').placeholder = T.nomePh;
+  document.getElementById('f-link-label').textContent = T.link;
+  document.getElementById('f-obs').placeholder = T.obsPh;
+}
+
 function openFonteModal(id) {
   const f = cache.fontes.find(x => x.id === id);
-  document.getElementById('modal-fonte-title').textContent = f ? 'Editar lugar' : 'Novo lugar';
+  const tipo = f ? tipoDe(f) : fonteTipo;
+  document.getElementById('modal-fonte-title').textContent = f ? 'Editar' : TIPOS_FONTE[tipo].titulo;
   document.getElementById('f-id').value   = f ? f.id : '';
+  document.getElementById('f-tipo').value = tipo;
   document.getElementById('f-nome').value = f ? f.nome : '';
   document.getElementById('f-link').value = f ? (f.link || '') : '';
   document.getElementById('f-obs').value  = f ? (f.obs || '') : '';
+  atualizarCamposFonte();
   openModal('modal-fonte');
 }
 
@@ -1434,6 +1469,7 @@ function saveFonte(e) {
   e.preventDefault();
   const id = document.getElementById('f-id').value;
   const dados = {
+    tipo: document.getElementById('f-tipo').value,
     nome: document.getElementById('f-nome').value.trim(),
     link: document.getElementById('f-link').value.trim(),
     obs:  document.getElementById('f-obs').value.trim()
@@ -1443,9 +1479,17 @@ function saveFonte(e) {
   } else {
     cache.fontes.push({ id: genId(), ultimaVisita: '', ...dados });
   }
+  fonteTipo = dados.tipo;   // mostra a área onde o item foi parar
   save('fontes');
   closeModal('modal-fonte');
   renderFontes();
+}
+
+// Atalho da empresa para a aba Trainee, já com nome e link preenchidos.
+function novoProcessoDaEmpresa(id) {
+  const f = cache.fontes.find(x => x.id === id);
+  setView('processos');
+  openProcModal(null, { empresa: f.nome, link: f.link || '' });
 }
 
 function delFonte(id) {
@@ -1464,13 +1508,21 @@ function marcarVisita(id) {
 
 function renderFontes() {
   const list = document.getElementById('fontes-list');
-  if (cache.fontes.length === 0) {
-    list.innerHTML = '<p class="hint">Nenhum lugar anotado ainda. Adicione sites de notícias de concursos, órgãos que você acompanha, bancas...</p>';
+  const T = TIPOS_FONTE[fonteTipo];
+  document.getElementById('fontes-abas').innerHTML = Object.keys(TIPOS_FONTE).map(k =>
+    `<button class="chip ${fonteTipo === k ? 'active' : ''}" onclick="setFonteTipo('${k}')">${TIPOS_FONTE[k].aba} (${cache.fontes.filter(f => tipoDe(f) === k).length})</button>`).join('');
+  document.getElementById('fontes-hint').textContent = T.hint;
+  document.getElementById('fontes-novo').textContent = fonteTipo === 'empresas' ? '+ Empresa' : '+ Lugar';
+
+  const daArea = cache.fontes.filter(f => tipoDe(f) === fonteTipo);
+  if (daArea.length === 0) {
+    list.innerHTML = `<p class="hint">${T.vazio}</p>`;
     return;
   }
   // Mais tempo sem visita primeiro (nunca visitados no topo)
-  const ordenadas = cache.fontes.slice().sort((a, b) => (a.ultimaVisita || '').localeCompare(b.ultimaVisita || ''));
+  const ordenadas = daArea.slice().sort((a, b) => (a.ultimaVisita || '').localeCompare(b.ultimaVisita || ''));
   list.innerHTML = ordenadas.map(f => {
+    const nProc = fonteTipo === 'empresas' ? cache.processos.filter(p => normNome(p.empresa) === normNome(f.nome)).length : 0;
     const dias = diasDesde(f.ultimaVisita);
     let visita, alerta = false;
     if (dias === null) { visita = 'nunca visitado'; alerta = true; }
@@ -1482,11 +1534,13 @@ function renderFontes() {
       <h3>${esc(f.nome)}</h3>
       <div class="concurso-meta">
         ${f.obs ? `📝 ${esc(f.obs)}<br>` : ''}
-        ${f.link ? `🔗 <a href="${esc(f.link)}" target="_blank" rel="noopener">Abrir site</a><br>` : ''}
+        ${f.link ? `🔗 <a href="${esc(f.link)}" target="_blank" rel="noopener">${T.abrir}</a><br>` : ''}
+        ${nProc ? `💼 ${nProc} processo(s) no Trainee<br>` : ''}
         <span class="${alerta ? 'fonte-visita-alerta' : ''}">👁️ ${visita}</span>
       </div>
       <div class="concurso-actions">
         <button class="btn-small" onclick="marcarVisita('${f.id}')">✔ Visitei hoje</button>
+        ${fonteTipo === 'empresas' ? `<button class="btn-small" onclick="novoProcessoDaEmpresa('${f.id}')">💼 Novo processo</button>` : ''}
         <button class="btn-small" onclick="openFonteModal('${f.id}')">✏️ Editar</button>
         <button class="btn-small btn-danger" onclick="delFonte('${f.id}')">🗑</button>
       </div>
@@ -1885,15 +1939,15 @@ function labelDias(n) { return n === 0 ? 'hoje' : n === 1 ? 'amanhã' : `em ${n}
 
 function getProc(id) { return cache.processos.find(p => p.id === id); }
 
-function openProcModal(id) {
+function openProcModal(id, preencher = {}) {
   const p = getProc(id);
   document.getElementById('modal-proc-title').textContent = p ? 'Editar processo' : 'Novo processo seletivo';
   document.getElementById('p-id').value      = p ? p.id : '';
-  document.getElementById('p-empresa').value = p ? p.empresa : '';
+  document.getElementById('p-empresa').value = p ? p.empresa : (preencher.empresa || '');
   document.getElementById('p-vaga').value    = p ? (p.vaga || '') : '';
   document.getElementById('p-status').value  = p ? p.status : 'interesse';
   document.getElementById('p-prazo').value   = p ? (p.prazo || '') : '';
-  document.getElementById('p-link').value    = p ? (p.link || '') : '';
+  document.getElementById('p-link').value    = p ? (p.link || '') : (preencher.link || '');
   document.getElementById('p-obs').value     = p ? (p.obs || '') : '';
   openModal('modal-proc');
 }

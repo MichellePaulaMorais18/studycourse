@@ -75,7 +75,7 @@
     <button onclick="setView('trilhas');closeDrawer()">🧭 Trilhas de estudo</button>
     <button onclick="setView('estudos');closeDrawer()">⏱️ Sessões de estudo</button>
     <button onclick="setView('quiz');closeDrawer()">🎯 Quiz de questões</button>
-    <button onclick="setView('fontes');closeDrawer()">🔭 Radar de concursos</button>
+    <button onclick="setView('fontes');closeDrawer()">🔭 Radar (concursos e empresas)</button>
     <button onclick="setView('processos');closeDrawer()">💼 Processos seletivos (trainee)</button>
     <button onclick="setView('concursos');closeDrawer()">🏛️ Meus concursos</button>
     <hr />
@@ -289,10 +289,11 @@
   <!-- ═══ RADAR DE CONCURSOS ═══ -->
   <section id="view-fontes" style="display:none">
     <div class="section-header">
-      <h2>🔭 Radar de concursos</h2>
-      <button class="btn-primary" onclick="openFonteModal()">+ Lugar</button>
+      <h2>🔭 Radar</h2>
+      <button class="btn-primary" id="fontes-novo" onclick="openFonteModal()">+ Lugar</button>
     </div>
-    <p class="hint">Anote sites, órgãos e bancas onde sempre aparecem concursos. Ao conferir um deles, clique em "Visitei hoje" — a lista mostra primeiro os que estão há mais tempo sem visita.</p>
+    <div class="proc-filtros" id="fontes-abas"></div>
+    <p class="hint" id="fontes-hint"></p>
     <div id="fontes-list"></div>
   </section>
 
@@ -574,12 +575,17 @@
     <h2 id="modal-fonte-title">Novo lugar</h2>
     <form onsubmit="saveFonte(event)">
       <input type="hidden" id="f-id" />
-      <label>Nome *</label>
-      <input id="f-nome" required placeholder="Ex.: PCI Concursos, site do TCE-GO, Prefeitura de Goiânia..." />
-      <label>Link</label>
+      <label>Área</label>
+      <select id="f-tipo" onchange="atualizarCamposFonte()">
+        <option value="concursos">🏛️ Concursos (sites, órgãos, bancas)</option>
+        <option value="empresas">🏢 Empresas (processos seletivos)</option>
+      </select>
+      <label id="f-nome-label">Nome *</label>
+      <input id="f-nome" required />
+      <label id="f-link-label">Link</label>
       <input id="f-link" type="url" placeholder="https://..." />
       <label>Anotações</label>
-      <input id="f-obs" placeholder="Ex.: costuma abrir concurso no fim do ano (opcional)" />
+      <input id="f-obs" />
       <button class="btn-primary" type="submit">Salvar</button>
     </form>
   </div>
